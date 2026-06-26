@@ -1,0 +1,129 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_USER = 'mohammadasif'
+        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
+        DOCKER_IMAGE_FRONTEND = "${DOCKER_HUB_USER}/exam-frontend:latest"
+        DOCKER_IMAGE_BACKEND = "${DOCKER_HUB_USER}/exam-backend:latest"
+    }
+
+    stages {
+        stage('Checkout Source Code') {
+            steps {
+                echo 'Checking out source code from GitHub...'
+                checkout scm
+            }
+        }
+
+        stage('Verify Environment') {
+            steps {
+                echo 'Verifying deployment environment tools...'
+                sh 'node --version'
+                sh 'npm --version'
+                sh 'docker --version'
+            }
+        }
+
+        stage('Install Frontend Dependencies') {
+            steps {
+                echo 'Installing dependencies for Frontend service...'
+                dir('frontend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Build Frontend') {
+            steps {
+                echo 'Compiling Frontend application...'
+                dir('frontend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Install Backend Dependencies') {
+            steps {
+                echo 'Installing dependencies for Backend service...'
+                dir('backend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                echo 'Building and tagging multi-container docker images locally...'
+                sh 'docker compose build'
+                sh "docker tag fullstack-frontend:latest ${DOCKER_IMAGE_FRONTEND}"
+                sh "docker tag fullstack-backend:latest ${DOCKER_IMAGE_BACKEND}"
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                echo 'Logging in to Docker Hub...'
+                withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                }
+            }
+        }
+
+        stage('Push Frontend Image') {
+            steps {
+                echo 'Pushing Frontend image to Docker Hub...'
+                sh "docker push ${DOCKER_IMAGE_FRONTEND}"
+            }
+        }
+
+        stage('Push Backend Image') {
+            steps {
+                echo 'Pushing Backend image to Docker Hub...'
+                sh "docker push ${DOCKER_IMAGE_BACKEND}"
+            }
+        }
+
+        stage('Stop Existing Containers') {
+            steps {
+                echo 'Stopping current container deployment...'
+                sh 'docker compose down'
+            }
+        }
+
+        stage('Pull Latest Images') {
+            steps {
+                echo 'Pulling updated images from Docker Hub registry...'
+                sh "docker pull ${DOCKER_IMAGE_FRONTEND}"
+                sh "docker pull ${DOCKER_IMAGE_BACKEND}"
+            }
+        }
+
+        stage('Deploy Latest Containers') {
+            steps {
+                echo 'Starting containers using Docker Hub pulled images...'
+                sh 'docker compose up -d'
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                echo 'Verifying running docker containers status...'
+                sh 'docker ps'
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Post build cleanup: cleaning Jenkins workspace...'
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline completed successfully.'
+        }
+        failure {
+            echo 'Pipeline execution failed.'
+        }
+    }
+}

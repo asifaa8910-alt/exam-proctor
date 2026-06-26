@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    image: mohammadasif/exam-backend:latest
+    container_name: exam_portal_backend
+    restart: always
+    ports:
+      - "5002:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+    volumes:
+      - backend_db:/usr/src/app/database
+
+  frontend:
+    build: ./frontend
+    image: mohammadasif/exam-frontend:latest
+    container_name: exam_portal_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_db:

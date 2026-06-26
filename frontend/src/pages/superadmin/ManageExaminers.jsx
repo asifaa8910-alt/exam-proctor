@@ -1,0 +1,186 @@
+import { useState, useEffect } from 'react';
+import { api } from '../../services/api';
+import Modal from '../../components/Modal';
+import { UserCheck, Trash2, Mail, UserPlus, Key } from 'lucide-react';
+
+export default function ManageExaminers() {
+    const [examiners, setExaminers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showAddModal, setShowAddModal] = useState(false);
+    
+    // Add examiner form state
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [examinerId, setExaminerId] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    const fetchExaminers = async () => {
+        try {
+            setLoading(true);
+            const data = await api.get('/auth/examiners-list');
+            setExaminers(data.examiners || []);
+        } catch (err) {
+            console.error('Failed to fetch examiners:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchExaminers();
+    }, []);
+
+    const handleAddExaminer = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+
+        if (password.length < 6) {
+            setError('Password must be at least 6 characters');
+            return;
+        }
+
+        try {
+            // Register examiner
+            await api.post('/auth/register', {
+                name,
+                email,
+                password,
+                role: 'examiner',
+                examinerId: examinerId.toUpperCase()
+            });
+
+            setSuccess('Examiner registered successfully!');
+            setName('');
+            setEmail('');
+            setPassword('');
+            setExaminerId('');
+            
+            // Reload examiners list
+            fetchExaminers();
+            
+            setTimeout(() => {
+                setShowAddModal(false);
+                setSuccess('');
+            }, 1000);
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
+    const handleDeleteExaminer = async (userId) => {
+        if (window.confirm('Are you sure you want to delete this Examiner? Doing so will unlink their students.')) {
+            try {
+                await api.delete(`/auth/users/${userId}`);
+                setExaminers(prev => prev.filter(ex => ex.id !== userId));
+            } catch (err) {
+                alert(`Failed to delete examiner: ${err.message}`);
+            }
+        }
+    };
+
+    return (
+        <div className="page-container">
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h1>Manage Examiners</h1>
+                    <p>View stats and manage examiner profiles across the system</p>
+                </div>
+                <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+                    <UserPlus size={16} /> Add Examiner
+                </button>
+            </div>
+
+            {loading ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                    <h3>Loading examiners...</h3>
+                </div>
+            ) : examiners.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', padding: 50, color: 'var(--text-muted)' }}>
+                    <UserCheck size={40} style={{ marginBottom: 12, opacity: 0.5 }} />
+                    <p>No examiners registered yet.</p>
+                </div>
+            ) : (
+                <div className="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Examiner ID</th>
+                                <th>Students Assigned</th>
+                                <th>Exams Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {examiners.map(ex => (
+                                <tr key={ex.id}>
+                                    <td style={{ fontWeight: 600 }}>{ex.name}</td>
+                                    <td style={{ color: 'var(--text-secondary)' }}>{ex.email}</td>
+                                    <td>
+                                        <span className="badge badge-info">{ex.examinerId}</span>
+                                    </td>
+                                    <td>
+                                        <span className="badge badge-accent">{ex.studentsCount} students</span>
+                                    </td>
+                                    <td>
+                                        <span className="badge" style={{ background: 'var(--bg-hover)' }}>{ex.examsCount} exams</span>
+                                    </td>
+                                    <td>
+                                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteExaminer(ex.id)} style={{ padding: '6px 8px' }}>
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Add Examiner Modal */}
+            <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Register New Examiner">
+                <form onSubmit={handleAddExaminer}>
+                    {error && (
+                        <div style={{ background: 'var(--danger-bg)', color: 'var(--danger)', padding: '10px', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', marginBottom: 14 }}>
+                            {error}
+                        </div>
+                    )}
+                    {success && (
+                        <div style={{ background: 'var(--success-bg)', color: 'var(--success)', padding: '10px', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', marginBottom: 14 }}>
+                            {success}
+                        </div>
+                    )}
+
+                    <div className="form-group">
+                        <label className="form-label">Full Name</label>
+                        <input className="form-input" type="text" placeholder="Dr. Jane Smith" value={name} onChange={e => setName(e.target.value)} required />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Email</label>
+                        <input className="form-input" type="email" placeholder="jane@exam.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Unique Examiner ID</label>
+                        <input className="form-input" type="text" placeholder="e.g. EXM-JANE" value={examinerId} onChange={e => setExaminerId(e.target.value)} required />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Password</label>
+                        <input className="form-input" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} required />
+                    </div>
+
+                    <div className="modal-actions" style={{ marginTop: 20 }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
+                        <button type="submit" className="btn btn-primary"><UserPlus size={14} /> Add Examiner</button>
+                    </div>
+                </form>
+            </Modal>
+        </div>
+    );
+}

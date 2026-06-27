@@ -3,7 +3,7 @@ version: '3.8'
 services:
   backend:
     build: ./backend
-    image: mohammadasif/exam-backend:latest
+    image: asifaa89/exam-backend:latest
     container_name: exam_portal_backend
     restart: always
     ports:
@@ -16,7 +16,7 @@ services:
 
   frontend:
     build: ./frontend
-    image: mohammadasif/exam-frontend:latest
+    image: asifaa89/exam-frontend:latest
     container_name: exam_portal_frontend
     restart: always
     ports:

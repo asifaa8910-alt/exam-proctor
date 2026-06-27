@@ -56,8 +56,6 @@ pipeline {
             steps {
                 echo 'Building and tagging multi-container docker images locally...'
                 sh 'docker compose build'
-                sh "docker tag fullstack-frontend:latest ${DOCKER_IMAGE_FRONTEND}"
-                sh "docker tag fullstack-backend:latest ${DOCKER_IMAGE_BACKEND}"
             }
         }
 

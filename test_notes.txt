@@ -1,0 +1,5 @@
+This is a document about operating systems.
+Operating systems manage memory, CPU scheduler, and hardware abstractions.
+A process is a running instance of a program, whereas a thread is a lightweight unit of execution.
+Core system constraints include resource consumption, CPU limits, and memory leakage.
+Troubleshooting deployment requires checking logs, verifying port configurations, and restarting services.

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useExam } from '../../context/ExamContext';
+import { api } from '../../services/api';
 import {
     Clock, AlertTriangle, Camera, Send, ChevronLeft, ChevronRight,
     Bookmark, CheckCircle, Eye
@@ -70,18 +71,33 @@ export default function TakeExam() {
         return () => clearInterval(timer);
     }, [submitted, timeLeft]);
 
-    // Tab switch detection
+    // Proctoring violations tracking
     useEffect(() => {
         if (submitted) return;
         if (settings?.proctoring_enabled === 'false') return;
 
-        const handleVisibility = () => {
-            if (document.hidden) {
+        const handleViolation = async (eventType, message) => {
+            addToast(message, 'danger');
+            
+            // Send violation immediately to backend
+            try {
+                await api.post('/proctor/log', {
+                    studentId: user.id,
+                    examId,
+                    eventType,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('Error logging violation:', err);
+            }
+
+            // Increment count for tab switches and focal actions
+            if (['tab_switch', 'window_blur', 'minimize', 'visibility_change'].includes(eventType)) {
                 setTabSwitches(prev => {
                     const newCount = prev + 1;
                     const maxAllowed = parseInt(settings?.max_tab_switches || 3);
                     if (newCount >= maxAllowed) {
-                        addToast(`🚨 Maximum tab switches (${maxAllowed}) exceeded! Auto-submitting...`, 'danger');
+                        addToast(`🚨 Maximum violations (${maxAllowed}) exceeded! Auto-submitting...`, 'danger');
                         setTimeout(() => {
                             const latestAnswers = JSON.parse(localStorage.getItem(`exam_answers_${examId}_${user.id}`) || JSON.stringify(answers));
                             submitExam({
@@ -95,15 +111,65 @@ export default function TakeExam() {
                             setSubmitted(true);
                             setShowSubmitModal(false);
                         }, 1000);
-                    } else {
-                        addToast(`⚠️ Tab switch detected! (${newCount}/${maxAllowed} switches)`, 'warning');
                     }
                     return newCount;
                 });
             }
         };
-        document.addEventListener('visibilitychange', handleVisibility);
-        return () => document.removeEventListener('visibilitychange', handleVisibility);
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                handleViolation('tab_switch', '⚠️ Tab switch detected! (Violation recorded)');
+            }
+        };
+
+        const handleBlur = () => {
+            handleViolation('window_blur', '⚠️ Focus lost! Keep your focus on the exam window.');
+        };
+
+        const handleFullscreen = () => {
+            if (!document.fullscreenElement) {
+                handleViolation('fullscreen_exit', '⚠️ Fullscreen exited! Fullscreen is required.');
+            }
+        };
+
+        const handleCopy = (e) => {
+            e.preventDefault();
+            handleViolation('copy_attempt', '🚫 Copying content is disabled during the exam!');
+        };
+
+        const handlePaste = (e) => {
+            e.preventDefault();
+            handleViolation('paste_attempt', '🚫 Pasting content is disabled during the exam!');
+        };
+
+        const handleContextMenu = (e) => {
+            e.preventDefault();
+            handleViolation('right_click', '🚫 Right-clicking is disabled during the exam!');
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('blur', handleBlur);
+        document.addEventListener('fullscreenchange', handleFullscreen);
+        document.addEventListener('copy', handleCopy);
+        document.addEventListener('paste', handlePaste);
+        document.addEventListener('contextmenu', handleContextMenu);
+
+        // Try to enter fullscreen at beginning
+        try {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        } catch (err) {}
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('blur', handleBlur);
+            document.removeEventListener('fullscreenchange', handleFullscreen);
+            document.removeEventListener('copy', handleCopy);
+            document.removeEventListener('paste', handlePaste);
+            document.removeEventListener('contextmenu', handleContextMenu);
+        };
     }, [submitted, settings, answers, examId, user.id, webcamSnapshots]);
 
     // Webcam setup
@@ -149,7 +215,7 @@ export default function TakeExam() {
         setWebcamActive(false);
     };
 
-    const captureSnapshot = () => {
+    const captureSnapshot = async () => {
         if (!videoRef.current || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const video = videoRef.current;
@@ -158,7 +224,21 @@ export default function TakeExam() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const snapshot = canvas.toDataURL('image/jpeg', 0.5);
-        setWebcamSnapshots(prev => [...prev, { time: new Date().toISOString(), image: snapshot }]);
+        
+        try {
+            const res = await api.post('/proctor/snapshot', {
+                studentId: user.id,
+                examId,
+                image: snapshot
+            });
+            if (res.success && res.snapshot) {
+                setWebcamSnapshots(prev => [...prev, { time: res.snapshot.capturedAt, image: res.snapshot.image }]);
+            }
+        } catch (err) {
+            console.error('Failed to upload snapshot:', err);
+            // fallback local cache
+            setWebcamSnapshots(prev => [...prev, { time: new Date().toISOString(), image: snapshot }]);
+        }
     };
 
     const addToast = useCallback((message, type = 'warning') => {
@@ -280,18 +360,43 @@ export default function TakeExam() {
                         </div>
                     )}
 
-                    {/* Timer */}
-                    <div style={{
-                        display: 'flex', alignItems: 'center', gap: 6, fontSize: '1rem',
-                        fontWeight: 700, fontFamily: 'monospace', padding: '8px 16px',
-                        borderRadius: 'var(--radius-md)',
-                        background: isTimeLow ? 'var(--danger-bg)' : 'var(--bg-card)',
-                        color: isTimeLow ? 'var(--danger)' : 'var(--text-primary)',
-                        border: `1px solid ${isTimeLow ? 'var(--danger)' : 'var(--border)'}`,
-                        animation: isTimeLow ? 'pulse 1s ease infinite' : 'none'
-                    }}>
-                        <Clock size={16} /> {formatTime(timeLeft)}
-                    </div>
+                    {/* Circular Animated Progress Timer */}
+                    {(() => {
+                        const totalSeconds = exam ? exam.duration * 60 : 3600;
+                        const pctRemaining = (timeLeft / totalSeconds) * 100;
+                        const strokeDashoffset = 2 * Math.PI * 22 * (1 - pctRemaining / 100);
+                        return (
+                            <div style={{ 
+                                position: 'relative', width: 54, height: 54, 
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: 'var(--bg-card)', borderRadius: '50%',
+                                border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)',
+                                flexShrink: 0
+                            }}>
+                                <svg width="54" height="54" style={{ transform: 'rotate(-90deg)', position: 'absolute' }}>
+                                    <circle cx="27" cy="27" r="22" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="3" fill="transparent" />
+                                    <circle 
+                                        cx="27" 
+                                        cy="27" 
+                                        r="22" 
+                                        stroke={isTimeLow ? 'var(--danger)' : 'var(--accent)'} 
+                                        strokeWidth="3.5" 
+                                        fill="transparent" 
+                                        strokeDasharray={2 * Math.PI * 22}
+                                        strokeDashoffset={strokeDashoffset}
+                                        style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.5s ease' }}
+                                    />
+                                </svg>
+                                <div style={{ 
+                                    fontSize: '0.68rem', fontWeight: 800, fontFamily: 'monospace', 
+                                    color: isTimeLow ? 'var(--danger)' : 'var(--text-primary)',
+                                    animation: isTimeLow ? 'pulse 1.2s infinite' : 'none'
+                                }}>
+                                    {formatTime(timeLeft)}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* Webcam (Only show if proctoring enabled) */}
                     {settings?.proctoring_enabled !== 'false' && (

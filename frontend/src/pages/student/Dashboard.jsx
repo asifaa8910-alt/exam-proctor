@@ -17,8 +17,12 @@ export default function StudentDashboard() {
     const upcoming = getUpcomingExams(user.id);
     const completed = getCompletedExams(user.id);
 
-    const totalScore = completed.reduce((s, c) => s + (c.totalScore || 0), 0);
-    const totalMaxScore = completed.reduce((s, c) => s + (c.exam?.totalMarks || 0), 0);
+    const publishedCompleted = completed.filter(c => {
+        const exam = exams.find(e => e.id === c.examId);
+        return exam?.resultsPublished && c.isGraded;
+    });
+    const totalScore = publishedCompleted.reduce((s, c) => s + (c.totalScore || 0), 0);
+    const totalMaxScore = publishedCompleted.reduce((s, c) => s + (c.exam?.totalMarks || 0), 0);
     const avgPercentage = totalMaxScore > 0 ? Math.round((totalScore / totalMaxScore) * 100) : 0;
     const totalTabSwitches = completed.reduce((s, c) => s + (c.tabSwitches || 0), 0);
 
@@ -256,7 +260,9 @@ export default function StudentDashboard() {
                                                     <Eye size={11} /> {sub.tabSwitches} switches
                                                 </span>
                                             )}
-                                            {sub.isGraded ? (
+                                            {!isPublished ? (
+                                                <span className="badge badge-warning">Result Pending</span>
+                                            ) : sub.isGraded ? (
                                                 <span className={`badge ${pct >= 70 ? 'badge-success' : pct >= 40 ? 'badge-warning' : 'badge-danger'}`}>
                                                     {sub.totalScore}/{exam?.totalMarks} ({pct}%)
                                                 </span>
@@ -277,59 +283,68 @@ export default function StudentDashboard() {
                                             borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
                                             animation: 'scaleIn 0.2s ease'
                                         }}>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginBottom: 16 }}>
-                                                <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>SCORE</div>
-                                                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)' }}>
-                                                        {sub.isGraded ? `${sub.totalScore}/${exam?.totalMarks}` : '—'}
+                                            {!isPublished ? (
+                                                <div style={{ padding: '14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--warning)', marginBottom: 4 }}>Result Pending</div>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Awaiting Examiner Approval</div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginBottom: 16 }}>
+                                                        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>SCORE</div>
+                                                            <div style={{ fontSize: '1.3rem', fontWeight: 800, color: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)' }}>
+                                                                {sub.isGraded ? `${sub.totalScore}/${exam?.totalMarks}` : '—'}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>PERCENTAGE</div>
+                                                            <div style={{ fontSize: '1.3rem', fontWeight: 800, color: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)' }}>
+                                                                {sub.isGraded ? `${pct}%` : '—'}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>TAB SWITCHES</div>
+                                                            <div style={{ fontSize: '1.3rem', fontWeight: 800, color: sub.tabSwitches > 3 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                                                                {sub.tabSwitches}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>SNAPSHOTS</div>
+                                                            <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{sub.webcamSnapshots?.length || 0}</div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>PERCENTAGE</div>
-                                                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)' }}>
-                                                        {sub.isGraded ? `${pct}%` : '—'}
-                                                    </div>
-                                                </div>
-                                                <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>TAB SWITCHES</div>
-                                                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: sub.tabSwitches > 3 ? 'var(--danger)' : 'var(--text-primary)' }}>
-                                                        {sub.tabSwitches}
-                                                    </div>
-                                                </div>
-                                                <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>SNAPSHOTS</div>
-                                                    <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{sub.webcamSnapshots?.length || 0}</div>
-                                                </div>
-                                            </div>
 
-                                            {/* Quick question breakdown */}
-                                            {sub.isGraded && exam && (
-                                                <div>
-                                                    <h4 style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 10 }}>Question Breakdown</h4>
-                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                                        {exam.questions.map((q, i) => {
-                                                            const grade = sub.grades?.[q.id];
-                                                            const isCorrect = grade != null && grade > 0;
-                                                            return (
-                                                                <div key={q.id} title={`Q${i + 1}: ${grade}/${q.marks}`} style={{
-                                                                    width: 36, height: 36, borderRadius: 'var(--radius-sm)',
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                    fontSize: '0.75rem', fontWeight: 700, cursor: 'default',
-                                                                    background: grade == null ? 'var(--bg-card)' : isCorrect ? 'var(--success-bg)' : 'var(--danger-bg)',
-                                                                    color: grade == null ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)',
-                                                                    border: `1px solid ${grade == null ? 'var(--border)' : isCorrect ? 'var(--success)' : 'var(--danger)'}`
-                                                                }}>
-                                                                    Q{i + 1}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
+                                                    {/* Quick question breakdown */}
+                                                    {sub.isGraded && exam && (
+                                                        <div>
+                                                            <h4 style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 10 }}>Question Breakdown</h4>
+                                                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                                {exam.questions.map((q, i) => {
+                                                                    const grade = sub.grades?.[q.id];
+                                                                    const isCorrect = grade != null && grade > 0;
+                                                                    return (
+                                                                        <div key={q.id} title={`Q${i + 1}: ${grade}/${q.marks}`} style={{
+                                                                            width: 36, height: 36, borderRadius: 'var(--radius-sm)',
+                                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                            fontSize: '0.75rem', fontWeight: 700, cursor: 'default',
+                                                                            background: grade == null ? 'var(--bg-card)' : isCorrect ? 'var(--success-bg)' : 'var(--danger-bg)',
+                                                                            color: grade == null ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)',
+                                                                            border: `1px solid ${grade == null ? 'var(--border)' : isCorrect ? 'var(--success)' : 'var(--danger)'}`
+                                                                        }}>
+                                                                            Q{i + 1}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
                                             )}
 
-                                            {!isPublished && sub.isGraded && (
+                                            {!isPublished && (
                                                 <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--warning-bg)', borderRadius: 'var(--radius-md)', fontSize: '0.78rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                    <AlertTriangle size={14} /> Detailed results will be available after admin publishes them.
+                                                    <AlertTriangle size={14} /> Waiting for Examiner Approval.
                                                 </div>
                                             )}
 

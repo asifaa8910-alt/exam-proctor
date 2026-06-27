@@ -140,16 +140,28 @@ router.get('/submissions', authenticateToken, async (req, res) => {
   try {
     let submissions;
     if (req.user.role === 'superadmin') {
-      submissions = await db.all('SELECT * FROM submissions');
+      submissions = await db.all(`
+        SELECT s.*, e.title as examTitle, e.totalMarks as examTotalMarks, u.name as studentName 
+        FROM submissions s 
+        LEFT JOIN exams e ON s.examId = e.id 
+        LEFT JOIN users u ON s.studentId = u.id
+      `);
     } else if (req.user.role === 'examiner') {
-      submissions = await db.all(
-        `SELECT s.* FROM submissions s 
-         INNER JOIN exams e ON s.examId = e.id 
-         WHERE e.examinerId = ?`,
-        [req.user.examinerId]
-      );
+      submissions = await db.all(`
+        SELECT s.*, e.title as examTitle, e.totalMarks as examTotalMarks, u.name as studentName 
+        FROM submissions s 
+        INNER JOIN exams e ON s.examId = e.id 
+        LEFT JOIN users u ON s.studentId = u.id
+        WHERE e.examinerId = ?
+      `, [req.user.examinerId]);
     } else {
-      submissions = await db.all('SELECT * FROM submissions WHERE studentId = ?', [req.user.id]);
+      submissions = await db.all(`
+        SELECT s.*, e.title as examTitle, e.totalMarks as examTotalMarks, u.name as studentName 
+        FROM submissions s 
+        LEFT JOIN exams e ON s.examId = e.id 
+        LEFT JOIN users u ON s.studentId = u.id
+        WHERE s.studentId = ?
+      `, [req.user.id]);
     }
 
     const formatted = submissions.map(s => ({
@@ -310,13 +322,105 @@ router.post('/submissions/:submissionId/grade', authenticateToken, isStaff, asyn
   }
 });
 
+// Get pending results (Staff only)
+router.get('/pending', authenticateToken, isStaff, async (req, res) => {
+  const db = await getDb();
+  try {
+    let pendingExams;
+    if (req.user.role === 'superadmin') {
+      pendingExams = await db.all("SELECT * FROM exams WHERE resultsPublished = 0 OR resultsStatus = 'pending'");
+    } else {
+      pendingExams = await db.all(
+        "SELECT * FROM exams WHERE (resultsPublished = 0 OR resultsStatus = 'pending') AND examinerId = ?", 
+        [req.user.examinerId]
+      );
+    }
+
+    const enhancedExams = [];
+    for (const exam of pendingExams) {
+      // Get all submissions for this exam
+      const subs = await db.all(`
+        SELECT s.*, u.name as studentName, u.email as studentEmail 
+        FROM submissions s 
+        JOIN users u ON s.studentId = u.id 
+        WHERE s.examId = ?
+      `, [exam.id]);
+      
+      const formattedSubs = subs.map(s => ({
+        ...s,
+        answers: JSON.parse(s.answers),
+        webcamSnapshots: JSON.parse(s.webcamSnapshots),
+        grades: JSON.parse(s.grades),
+        isGraded: !!s.isGraded
+      }));
+
+      enhancedExams.push({
+        ...exam,
+        resultsPublished: false,
+        resultsStatus: 'pending',
+        assignedStudents: JSON.parse(exam.assignedStudents),
+        questions: JSON.parse(exam.questions),
+        submissions: formattedSubs
+      });
+    }
+
+    res.json({ exams: enhancedExams });
+  } catch (error) {
+    console.error('Failed to get pending exams:', error);
+    res.status(500).json({ error: 'Failed to retrieve pending exams' });
+  }
+});
+
+// Publish exam results (Staff only)
+router.put('/publish/:examId', authenticateToken, isStaff, async (req, res) => {
+  const { examId } = req.params;
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT resultsPublished, examinerId, title FROM exams WHERE id = ?', [examId]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    if (req.user.role !== 'superadmin' && exam.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Unauthorized to publish results for this exam' });
+    }
+
+    const publishedAt = new Date().toISOString();
+    const publishedBy = req.user.email || req.user.name || 'Examiner';
+
+    await db.run(
+      "UPDATE exams SET resultsPublished = 1, resultsStatus = 'published', publishedAt = ?, publishedBy = ? WHERE id = ?",
+      [publishedAt, publishedBy, examId]
+    );
+
+    await addAuditLog(req.user.email, 'PUBLISH_RESULTS', `Published results for exam "${exam.title}" (ID: ${examId})`);
+
+    // Broadcast results published real-time activity event
+    if (req.io) {
+      req.io.emit('results-published', { examId, examTitle: exam.title, publishedAt, publishedBy });
+      req.io.emit('activity', {
+        type: 'publish',
+        text: `Results published for "${exam.title}"`,
+        time: publishedAt,
+        detail: `Published by: ${publishedBy}`,
+        color: 'var(--success)'
+      });
+    }
+
+    res.json({ success: true, resultsPublished: true, publishedAt, publishedBy });
+  } catch (error) {
+    console.error('Failed to publish results:', error);
+    res.status(500).json({ error: 'Failed to publish results' });
+  }
+});
+
 // Toggle publish results (Staff only)
 router.post('/:examId/toggle-publish', authenticateToken, isStaff, async (req, res) => {
   const { examId } = req.params;
   const db = await getDb();
 
   try {
-    const exam = await db.get('SELECT resultsPublished, examinerId FROM exams WHERE id = ?', [examId]);
+    const exam = await db.get('SELECT resultsPublished, examinerId, title FROM exams WHERE id = ?', [examId]);
     if (!exam) {
       return res.status(404).json({ error: 'Exam not found' });
     }
@@ -326,9 +430,28 @@ router.post('/:examId/toggle-publish', authenticateToken, isStaff, async (req, r
     }
 
     const newPublishState = exam.resultsPublished === 1 ? 0 : 1;
-    await db.run('UPDATE exams SET resultsPublished = ? WHERE id = ?', [newPublishState, examId]);
+    const publishedAt = newPublishState === 1 ? new Date().toISOString() : null;
+    const publishedBy = newPublishState === 1 ? (req.user.email || req.user.name) : null;
+    const resultsStatus = newPublishState === 1 ? 'published' : 'pending';
+
+    await db.run(
+      'UPDATE exams SET resultsPublished = ?, resultsStatus = ?, publishedAt = ?, publishedBy = ? WHERE id = ?',
+      [newPublishState, resultsStatus, publishedAt, publishedBy, examId]
+    );
 
     await addAuditLog(req.user.email, 'PUBLISH_RESULTS', `${newPublishState === 1 ? 'Published' : 'Unpublished'} results for exam ID: ${examId}`);
+
+    if (req.io && newPublishState === 1) {
+      req.io.emit('results-published', { examId, examTitle: exam.title, publishedAt, publishedBy });
+      req.io.emit('activity', {
+        type: 'publish',
+        text: `Results published for "${exam.title}"`,
+        time: publishedAt || new Date().toISOString(),
+        detail: `Published by: ${publishedBy || 'System'}`,
+        color: 'var(--success)'
+      });
+    }
+
     res.json({ success: true, resultsPublished: newPublishState === 1 });
   } catch (error) {
     console.error('Failed to toggle publish status:', error);
@@ -376,6 +499,156 @@ router.post('/:examId/assign', authenticateToken, isStaff, async (req, res) => {
   } catch (error) {
     console.error('Failed to assign students:', error);
     res.status(500).json({ error: 'Failed to assign students to exam' });
+  }
+});
+
+// Generate exam from document (Staff only)
+router.post('/generate-from-document', authenticateToken, isStaff, async (req, res) => {
+  const { filename, fileContent } = req.body;
+
+  if (!filename || !fileContent) {
+    return res.status(400).json({ error: 'Filename and base64 file content are required' });
+  }
+
+  try {
+    // Decode base64 file content
+    const base64Data = fileContent.split(';base64,').pop();
+    const rawText = Buffer.from(base64Data, 'base64').toString('utf-8');
+
+    // Split by lines and clean empty/short strings
+    let lines = rawText
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 10);
+
+    // PDF/DOCX binary cleaning to pull text strings if loaded
+    if (rawText.includes('%PDF') || rawText.includes('PK\x03\x04')) {
+      const asciiText = rawText.replace(/[^\x20-\x7E\n\r]/g, ' ');
+      lines = asciiText
+        .split(/\s{3,}/)
+        .map(line => line.trim())
+        .filter(line => {
+          return line.length > 15 && 
+                 line.length < 350 && 
+                 !line.startsWith('PDF') && 
+                 !line.includes('xml') &&
+                 !/^[0-9\s]+$/.test(line);
+        });
+    }
+
+    // Default fallback if no clean lines could be parsed
+    if (lines.length === 0) {
+      lines = [`Analyze the topics and general principles outlined within "${filename.replace(/\.[^/.]+$/, '')}".`];
+    }
+
+    const generatedQuestions = [];
+    const makeId = () => 'ai_' + Math.random().toString(36).substr(2, 9);
+
+    lines.forEach((line, index) => {
+      const lowerLine = line.toLowerCase();
+      
+      // Determine if it already looks like a question
+      const isPreExistingQuestion = line.includes('?') || 
+                                    /^(what|why|how|explain|describe|who|where|when|which|is|define)/i.test(line);
+
+      if (isPreExistingQuestion) {
+        const hasOptions = /([a-d]\)|[1-4]\)|A\.|B\.|C\.|D\.)/.test(line);
+        if (hasOptions || lowerLine.includes('select') || lowerLine.includes('choose')) {
+          generatedQuestions.push({
+            id: makeId(),
+            text: line,
+            type: 'mcq',
+            options: [
+              'Option A (Extracted context)',
+              'Option B (Alternative context)',
+              'Option C (Secondary detail)',
+              'Option D (Distractor option)'
+            ],
+            correctAnswer: 0,
+            marks: 5
+          });
+        } else {
+          generatedQuestions.push({
+            id: makeId(),
+            text: line,
+            type: 'subjective',
+            marks: 10
+          });
+        }
+      } else {
+        // Parse statements/facts and convert into questions
+        if (lowerLine.includes('is a') || lowerLine.includes('whereas') || lowerLine.includes('include') || lowerLine.includes('requires')) {
+          if (index % 2 === 0) {
+            // Generate MCQ
+            let prompt = `Based on the document, what is the meaning or function of: "${line.substring(0, 75)}..."?`;
+            if (lowerLine.includes('is a')) {
+              const parts = line.split(/is a/i);
+              prompt = `According to the text, what is "${parts[0].trim()}"?`;
+            } else if (lowerLine.includes('include')) {
+              const parts = line.split(/include/i);
+              prompt = `Which of the following are included in "${parts[0].trim()}"?`;
+            }
+
+            generatedQuestions.push({
+              id: makeId(),
+              text: prompt,
+              type: 'mcq',
+              options: [
+                line, // Correct answer
+                'An unrelated system configuration parameter.',
+                'A legacy driver framework with low resource allocation.',
+                'A temporary virtual storage process.'
+              ],
+              correctAnswer: 0,
+              marks: 5
+            });
+          } else {
+            // Generate Subjective
+            let prompt = `Explain the following statement from the text: "${line}"`;
+            if (lowerLine.includes('requires')) {
+              const parts = line.split(/requires/i);
+              prompt = `Detail the requirements and execution steps related to: "${parts[0].trim()}"`;
+            }
+
+            generatedQuestions.push({
+              id: makeId(),
+              text: prompt,
+              type: 'subjective',
+              marks: 10
+            });
+          }
+        } else {
+          // Standard general fallback mapping
+          if (index % 2 === 0) {
+            generatedQuestions.push({
+              id: makeId(),
+              text: `Analyze the following point from the text: "${line}"`,
+              type: 'subjective',
+              marks: 5
+            });
+          } else {
+            generatedQuestions.push({
+              id: makeId(),
+              text: `Identify the true statement regarding the document discussion about: "${line.substring(0, 50)}..."`,
+              type: 'mcq',
+              options: [
+                line,
+                'It has been omitted due to system constraints.',
+                'It conflicts with standard execution routines.',
+                'It requires manual intervention from the supervisor.'
+              ],
+              correctAnswer: 0,
+              marks: 5
+            });
+          }
+        }
+      }
+    });
+
+    res.json({ success: true, questions: generatedQuestions });
+  } catch (error) {
+    console.error('Failed to generate questions from document:', error);
+    res.status(500).json({ error: 'Failed to process document and generate questions' });
   }
 });
 

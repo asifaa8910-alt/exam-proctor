@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDb, addAuditLog, resetDbToDefaults } from '../config/db.js';
 import { JWT_SECRET, authenticateToken, isSuperAdmin, isExaminer, isStaff } from '../middleware/authMiddleware.js';
+import { getActiveUsersList } from '../services/socketService.js';
 
 const router = Router();
 
@@ -243,18 +244,44 @@ router.delete('/students/:id', authenticateToken, isStaff, async (req, res) => {
   const db = await getDb();
 
   try {
-    const student = await db.get('SELECT email FROM users WHERE id = ?', [id]);
-    if (req.user.role === 'superadmin') {
-      await db.run('DELETE FROM users WHERE id = ? AND role = ?', [id, 'student']);
-    } else {
-      await db.run(
-        'DELETE FROM users WHERE id = ? AND role = ? AND examinerId = ?',
-        [id, 'student', req.user.examinerId]
-      );
+    const student = await db.get('SELECT * FROM users WHERE id = ? AND role = ?', [id, 'student']);
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
     }
-    await addAuditLog(req.user.email, 'DELETE_STUDENT', `Deleted student: ${student?.email || id}`);
+
+    // Verify ownership if examiner
+    if (req.user.role !== 'superadmin' && student.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Unauthorized to delete this student' });
+    }
+
+    // Cascading deletion
+    // 1. Delete submissions
+    await db.run('DELETE FROM submissions WHERE studentId = ?', [id]);
+    // 2. Delete violation logs
+    await db.run('DELETE FROM violation_logs WHERE studentId = ?', [id]);
+    // 3. Delete snapshots
+    await db.run('DELETE FROM snapshots WHERE studentId = ?', [id]);
+    // 4. Remove reference from exam assignments
+    const allExams = await db.all('SELECT id, assignedStudents FROM exams');
+    for (const exam of allExams) {
+      try {
+        let assigned = JSON.parse(exam.assignedStudents);
+        if (assigned.includes(id)) {
+          assigned = assigned.filter(sid => sid !== id);
+          await db.run('UPDATE exams SET assignedStudents = ? WHERE id = ?', [JSON.stringify(assigned), exam.id]);
+        }
+      } catch (e) {
+        console.error('Failed to parse assignedStudents during student deletion cascading: ', e);
+      }
+    }
+
+    // 5. Delete actual student user row
+    await db.run('DELETE FROM users WHERE id = ?', [id]);
+
+    await addAuditLog(req.user.email, 'DELETE_STUDENT', `Cascaded deletion of student: ${student.email} (${student.name})`);
     res.json({ success: true });
   } catch (error) {
+    console.error('Student deletion error:', error);
     res.status(500).json({ error: 'Failed to delete student' });
   }
 });
@@ -355,6 +382,16 @@ router.post('/settings', authenticateToken, isSuperAdmin, async (req, res) => {
   } catch (error) {
     console.error('Failed to save settings:', error);
     res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+// Staff & Admin: Get live logged-in users
+router.get('/live-users', authenticateToken, isStaff, (req, res) => {
+  try {
+    const list = getActiveUsersList();
+    res.json({ activeUsers: list });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to retrieve live users' });
   }
 });
 

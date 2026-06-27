@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { io } from 'socket.io-client';
 
 const AuthContext = createContext(null);
 
@@ -7,6 +8,7 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [users, setUsers] = useState([]);
     const [examiners, setExaminers] = useState([]);
+    const [socket, setSocket] = useState(null);
     const [settings, setSettings] = useState({
         allow_student_registration: 'true',
         proctoring_enabled: 'true',
@@ -55,6 +57,23 @@ export function AuthProvider({ children }) {
         fetchExaminers();
         fetchSettings();
     }, []);
+
+    useEffect(() => {
+        if (user) {
+            const socketUrl = import.meta.env.VITE_API_URL 
+                ? import.meta.env.VITE_API_URL.replace('/api', '') 
+                : window.location.origin.replace(':5173', ':5002').replace(':3000', ':5002');
+            
+            const newSocket = io(socketUrl);
+            newSocket.emit('register-active-user', user);
+            setSocket(newSocket);
+
+            return () => {
+                newSocket.disconnect();
+                setSocket(null);
+            };
+        }
+    }, [user]);
 
     useEffect(() => {
         const fetchStudents = async () => {
@@ -149,7 +168,7 @@ export function AuthProvider({ children }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user, users, examiners, fetchExaminers, login, register, logout, getStudents, addStudent, removeStudent, settings, fetchSettings, updateSettings }}>
+        <AuthContext.Provider value={{ user, users, examiners, fetchExaminers, login, register, logout, getStudents, addStudent, removeStudent, settings, fetchSettings, updateSettings, socket }}>
             {children}
         </AuthContext.Provider>
     );

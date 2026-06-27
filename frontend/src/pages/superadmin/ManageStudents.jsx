@@ -16,6 +16,14 @@ export default function SuperAdminStudents() {
     const [assignStudentId, setAssignStudentId] = useState(null);
     const [selectedExams, setSelectedExams] = useState([]);
     
+    // Search and filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedExaminerFilter, setSelectedExaminerFilter] = useState('');
+
+    // Deletion modal state
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState(null);
+
     // Add student form state
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -79,16 +87,29 @@ export default function SuperAdminStudents() {
         }
     };
 
-    const handleRemoveStudent = async (studentId) => {
-        if (window.confirm('Are you sure you want to remove this student?')) {
-            try {
-                await removeStudent(studentId);
-                setStudents(prev => prev.filter(s => s.id !== studentId));
-            } catch (err) {
-                alert(`Failed to remove student: ${err.message}`);
-            }
+    const handleRemoveStudent = (studentId) => {
+        setDeleteTargetId(studentId);
+        setShowDeleteConfirm(true);
+    };
+
+    const executeDeleteStudent = async () => {
+        if (!deleteTargetId) return;
+        try {
+            await removeStudent(deleteTargetId);
+            setStudents(prev => prev.filter(s => s.id !== deleteTargetId));
+            setShowDeleteConfirm(false);
+            setDeleteTargetId(null);
+        } catch (err) {
+            alert(`Failed to remove student: ${err.message}`);
         }
     };
+
+    const filteredStudents = students.filter(s => {
+        const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                              s.email.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesExaminer = selectedExaminerFilter === '' || s.examinerId === selectedExaminerFilter;
+        return matchesSearch && matchesExaminer;
+    });
 
     const getAssignedExamCount = (studentId) => {
         return exams.filter(e => e.assignedStudents?.includes(studentId)).length;
@@ -106,14 +127,39 @@ export default function SuperAdminStudents() {
                 </button>
             </div>
 
+            {/* Search and Filter Roster Control */}
+            <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 12, flexWrap: 'wrap', padding: '16px' }}>
+                <input 
+                    className="form-input" 
+                    style={{ flex: 2, minWidth: 200 }} 
+                    placeholder="Search by name or email..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                />
+                <select 
+                    className="form-select" 
+                    style={{ flex: 1, minWidth: 150 }}
+                    value={selectedExaminerFilter}
+                    onChange={e => setSelectedExaminerFilter(e.target.value)}
+                >
+                    <option value="">All Examiners</option>
+                    {examiners.map(ex => (
+                        <option key={ex.examinerId} value={ex.examinerId}>{ex.name}</option>
+                    ))}
+                </select>
+            </div>
+
             {loading ? (
-                <div style={{ textAlign: 'center', padding: 40 }}>
-                    <h3>Loading students...</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="skeleton skeleton-card" style={{ height: 50 }} />
+                    <div className="skeleton skeleton-card" style={{ height: 50 }} />
+                    <div className="skeleton skeleton-card" style={{ height: 50 }} />
+                    <div className="skeleton skeleton-card" style={{ height: 50 }} />
                 </div>
-            ) : students.length === 0 ? (
+            ) : filteredStudents.length === 0 ? (
                 <div className="card" style={{ textAlign: 'center', padding: 50, color: 'var(--text-muted)' }}>
                     <User size={40} style={{ marginBottom: 12, opacity: 0.5 }} />
-                    <p>No students registered yet.</p>
+                    <p>No matching student records found.</p>
                 </div>
             ) : (
                 <div className="table-container">
@@ -128,7 +174,7 @@ export default function SuperAdminStudents() {
                             </tr>
                         </thead>
                         <tbody>
-                            {students.map(s => (
+                            {filteredStudents.map(s => (
                                 <tr key={s.id}>
                                     <td style={{ fontWeight: 600 }}>{s.name}</td>
                                     <td style={{ color: 'var(--text-secondary)' }}>{s.email}</td>
@@ -234,6 +280,27 @@ export default function SuperAdminStudents() {
                     <button className="btn btn-primary" onClick={handleAssign} disabled={selectedExams.length === 0}>
                         Assign ({selectedExams.length})
                     </button>
+                </div>
+            </Modal>
+
+            {/* Custom Cascading Confirmation Modal */}
+            <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="Confirm Student Deletion">
+                <p style={{ marginBottom: 16, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                    Are you sure you want to permanently delete student <strong>{students.find(s => s.id === deleteTargetId)?.name}</strong>?
+                </p>
+                <div style={{ background: 'var(--danger-bg)', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--danger)', fontSize: '0.82rem', marginBottom: 20 }}>
+                    <p style={{ fontWeight: 700, color: 'var(--danger)', marginBottom: 6 }}>⚠️ Warning: Cascading Deletion Triggered</p>
+                    <p style={{ margin: 0, color: 'var(--text-primary)' }}>This action cannot be undone and will purge all student data from the database, including:</p>
+                    <ul style={{ paddingLeft: 16, marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <li>All completed and graded exam submissions</li>
+                        <li>Captured webcam snapshots gallery</li>
+                        <li>Logged proctoring violation counts and timelines</li>
+                        <li>References and assignments inside active exams</li>
+                    </ul>
+                </div>
+                <div className="modal-actions">
+                    <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                    <button className="btn btn-danger" onClick={executeDeleteStudent}>Confirm Cascade Delete</button>
                 </div>
             </Modal>
         </div>

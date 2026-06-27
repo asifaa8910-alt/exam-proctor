@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useExam } from '../../context/ExamContext';
 import { api } from '../../services/api';
@@ -7,6 +7,7 @@ import {
     Clock, ShieldCheck, Activity, Settings, Database,
     CheckCircle, AlertTriangle, Save, RotateCcw, PlayCircle, Info
 } from 'lucide-react';
+
 
 export default function SuperAdminDashboard() {
     const { user, settings, updateSettings } = useAuth();
@@ -19,8 +20,11 @@ export default function SuperAdminDashboard() {
     });
     const [examiners, setExaminers] = useState([]);
     const [recentLogs, setRecentLogs] = useState([]);
+    const [liveLogs, setLiveLogs] = useState([]);
+    const [liveUsers, setLiveUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
+    const { socket } = useAuth();
 
     // Settings form state
     const [allowReg, setAllowReg] = useState(true);
@@ -71,6 +75,58 @@ export default function SuperAdminDashboard() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleActivity = (act) => {
+            setLiveLogs(prev => [act, ...prev].slice(0, 15));
+        };
+
+        socket.on('activity', handleActivity);
+        socket.on('violation', (v) => {
+            handleActivity({
+                type: 'violation',
+                text: `Student "${v.studentName}" triggered violation: ${v.eventType.replace('_', ' ')}`,
+                time: v.timestamp,
+                detail: `Exam ID: ${v.examId}`,
+                color: 'var(--danger)'
+            });
+        });
+
+        socket.on('active-users-update', (list) => {
+            setLiveUsers(list || []);
+        });
+
+        // Fetch live users registry initially
+        api.get('/auth/live-users')
+            .then(data => {
+                setLiveUsers(data.activeUsers || []);
+            })
+            .catch(err => console.error('Failed initial live users fetch:', err));
+
+        return () => {
+            socket.off('activity');
+            socket.off('violation');
+            socket.off('active-users-update');
+        };
+    }, [socket]);
+
+    const recentActivityLogs = useMemo(() => {
+        const staticLogs = submissions.map(s => {
+            const exam = exams.find(e => e.id === s.examId);
+            return {
+                type: 'submission',
+                text: `Student "${s.studentName || s.studentId}" submitted "${exam?.title || s.examId}"`,
+                time: s.submittedAt,
+                detail: `Score: ${s.totalScore} | Tab switches: ${s.tabSwitches}`,
+                color: s.tabSwitches > 3 ? 'var(--danger)' : 'var(--success)'
+            };
+        });
+        
+        const combined = [...liveLogs, ...staticLogs];
+        return combined.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 10);
+    }, [submissions, exams, liveLogs]);
 
     useEffect(() => {
         if (user) {
@@ -272,39 +328,7 @@ export default function SuperAdminDashboard() {
                     {/* Analytics Section */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 24, marginBottom: 30 }}>
                         
-                        {/* Student Distribution per Examiner Chart */}
-                        <div className="card">
-                            <h3 style={{ fontSize: '1.05rem', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <Users size={18} style={{ color: 'var(--accent)' }} /> Students per Examiner
-                            </h3>
-                            {examiners.length === 0 ? (
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center' }}>No examiners registered.</p>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    {examiners.map(ex => {
-                                        const maxStudents = Math.max(...examiners.map(e => e.studentsCount), 1);
-                                        const percentage = (ex.studentsCount / maxStudents) * 100;
-                                        return (
-                                            <div key={ex.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600 }}>
-                                                    <span>{ex.name} ({ex.examinerId})</span>
-                                                    <span style={{ color: 'var(--text-secondary)' }}>{ex.studentsCount} students</span>
-                                                </div>
-                                                <div style={{ height: 10, background: 'var(--bg-input)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                                                    <div style={{
-                                                        height: '100%',
-                                                        width: `${percentage}%`,
-                                                        background: 'var(--accent-gradient)',
-                                                        borderRadius: 'var(--radius-full)',
-                                                        transition: 'width 0.4s ease'
-                                                    }} />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+
 
                         {/* Proctor Violation Rate Gauge */}
                         <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
@@ -353,7 +377,7 @@ export default function SuperAdminDashboard() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24 }}>
                         {/* Database Summary */}
                         <div className="card">
                             <h3 style={{ fontSize: '1.05rem', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -390,16 +414,45 @@ export default function SuperAdminDashboard() {
                             </div>
                         </div>
 
+                        {/* Live Logged-in Users */}
+                        <div className="card">
+                            <h3 style={{ fontSize: '1.05rem', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
+                                Live Logged-in Users ({liveUsers.length})
+                            </h3>
+                            {liveUsers.length === 0 ? (
+                                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No active users online</p>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
+                                    {liveUsers.map((u, i) => (
+                                        <div key={i} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: '10px 12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)',
+                                            fontSize: '0.8rem', border: '1px solid var(--border)'
+                                        }}>
+                                            <div>
+                                                <div style={{ fontWeight: 600 }}>{u.name}</div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                                            </div>
+                                            <span className={`badge ${u.role === 'superadmin' ? 'badge-danger' : u.role === 'examiner' ? 'badge-info' : 'badge-accent'}`}>
+                                                {u.role}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         {/* Recent Activity Log */}
                         <div className="card">
                             <h3 style={{ fontSize: '1.05rem', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <Clock size={18} style={{ color: 'var(--info)' }} /> Global Activity Timeline
                             </h3>
-                            {recentLogs.length === 0 ? (
+                            {recentActivityLogs.length === 0 ? (
                                 <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No logs recorded yet.</p>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
-                                    {recentLogs.map((log, i) => (
+                                    {recentActivityLogs.map((log, i) => (
                                         <div key={i} style={{
                                             display: 'flex', gap: 12, padding: '10px 12px',
                                             background: 'var(--bg-input)', borderRadius: 'var(--radius-md)',

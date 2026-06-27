@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useExam } from '../../context/ExamContext';
 import {
     FileText, Users, ClipboardCheck, AlertTriangle, Clock,
     ChevronDown, ChevronUp, Eye, Award, BookOpen, Calendar, CheckCircle,
-    TrendingUp, UserX
+    TrendingUp, UserX, Key, Activity
 } from 'lucide-react';
+
 
 export default function ExaminerDashboard() {
     const { user, getStudents, settings } = useAuth();
@@ -36,16 +37,55 @@ export default function ExaminerDashboard() {
         return { total: subs.length, graded: graded.length, avg, flagged };
     };
 
-    const recentActivity = [
-        ...submissions.map(s => ({
+    const [liveActivities, setLiveActivities] = useState([]);
+    const { socket } = useAuth();
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleActivity = (act) => {
+            setLiveActivities(prev => [act, ...prev].slice(0, 15));
+        };
+
+        socket.on('activity', handleActivity);
+        socket.on('violation', (v) => {
+            handleActivity({
+                type: 'violation',
+                text: `Student "${v.studentName}" triggered violation: ${v.eventType.replace('_', ' ')}`,
+                time: v.timestamp,
+                detail: `Exam ID: ${v.examId}`,
+                color: 'var(--danger)'
+            });
+        });
+
+        return () => {
+            socket.off('activity');
+            socket.off('violation');
+        };
+    }, [socket]);
+
+    const recentActivity = useMemo(() => {
+        const computed = submissions.map(s => ({
             type: 'submission',
             text: `${students.find(st => st.id === s.studentId)?.name || 'Student'} submitted ${exams.find(e => e.id === s.examId)?.title || 'an exam'}`,
             time: s.submittedAt,
-            icon: ClipboardCheck,
             color: 'var(--success)',
             detail: `Score: ${s.totalScore} | Tab Switches: ${s.tabSwitches}`
-        })),
-    ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 8);
+        }));
+        
+        const combined = [...liveActivities, ...computed];
+        return combined.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 8);
+    }, [submissions, exams, students, liveActivities]);
+
+    const getActivityIcon = (type) => {
+        switch (type) {
+            case 'submission': return ClipboardCheck;
+            case 'violation': return AlertTriangle;
+            case 'login': return Key;
+            default: return Activity;
+        }
+    };
+
 
     return (
         <div className="page-container">
@@ -100,7 +140,7 @@ export default function ExaminerDashboard() {
                     <div className="stat-icon red"><AlertTriangle size={22} /></div>
                     <div className="stat-info">
                         <h3>{flaggedStudents.length}</h3>
-                        <p>Flagged Students</p>
+                        <p>Flagged Submissions</p>
                     </div>
                 </div>
                 <div className="stat-card">
@@ -111,6 +151,7 @@ export default function ExaminerDashboard() {
                     </div>
                 </div>
             </div>
+
 
             {/* Expanded Detail Sections */}
             {expandedSection === 'exams' && (
@@ -345,23 +386,26 @@ export default function ExaminerDashboard() {
                     <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>No recent activity</p>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {recentActivity.map((item, i) => (
-                            <div key={i} style={{
-                                display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
-                                background: 'var(--bg-input)', borderRadius: 'var(--radius-md)'
-                            }}>
-                                <item.icon size={18} style={{ color: item.color, flexShrink: 0 }} />
-                                <div style={{ flex: 1 }}>
-                                    <span style={{ fontSize: '0.85rem' }}>{item.text}</span>
-                                    {item.detail && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{item.detail}</div>
-                                    )}
+                        {recentActivity.map((item, i) => {
+                            const Icon = getActivityIcon(item.type);
+                            return (
+                                <div key={i} style={{
+                                    display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
+                                    background: 'var(--bg-input)', borderRadius: 'var(--radius-md)'
+                                }}>
+                                    <Icon size={18} style={{ color: item.color || 'var(--accent)', flexShrink: 0 }} />
+                                    <div style={{ flex: 1 }}>
+                                        <span style={{ fontSize: '0.85rem' }}>{item.text}</span>
+                                        {item.detail && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{item.detail}</div>
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                        <Clock size={12} style={{ verticalAlign: 'middle' }} /> {new Date(item.time).toLocaleTimeString()}
+                                    </span>
                                 </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                    <Clock size={12} style={{ verticalAlign: 'middle' }} /> {new Date(item.time).toLocaleString()}
-                                </span>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

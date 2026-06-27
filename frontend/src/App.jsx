@@ -1,3 +1,4 @@
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ExamProvider } from './context/ExamContext';
@@ -5,31 +6,45 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 
-// Pages
-import Login from './pages/Login';
-import Register from './pages/Register';
+// Lazy load all platform pages for optimal code splitting
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
 
-// Student
-import StudentDashboard from './pages/student/Dashboard';
-import TakeExam from './pages/student/TakeExam';
-import Results from './pages/student/Results';
+// Student Pages
+const StudentDashboard = lazy(() => import('./pages/student/Dashboard'));
+const TakeExam = lazy(() => import('./pages/student/TakeExam'));
+const Results = lazy(() => import('./pages/student/Results'));
 
-// Examiner
-import ExaminerDashboard from './pages/examiner/Dashboard';
-import CreateExam from './pages/examiner/CreateExam';
-import ManageStudents from './pages/examiner/ManageStudents';
-import ProctoringLogs from './pages/examiner/ProctoringLogs';
-import GradeExam from './pages/examiner/GradeExam';
-import PublishResults from './pages/examiner/PublishResults';
+// Examiner Pages
+const ExaminerDashboard = lazy(() => import('./pages/examiner/Dashboard'));
+const CreateExam = lazy(() => import('./pages/examiner/CreateExam'));
+const ManageStudents = lazy(() => import('./pages/examiner/ManageStudents'));
+const ProctoringLogs = lazy(() => import('./pages/examiner/ProctoringLogs'));
+const GradeExam = lazy(() => import('./pages/examiner/GradeExam'));
+const PublishResults = lazy(() => import('./pages/examiner/PublishResults'));
 
-// Super Admin
-import SuperAdminDashboard from './pages/superadmin/Dashboard';
-import ManageExaminers from './pages/superadmin/ManageExaminers';
-import SuperAdminStudents from './pages/superadmin/ManageStudents';
-import SuperAdminExams from './pages/superadmin/ManageExams';
-import SystemLogs from './pages/superadmin/SystemLogs';
+// Super Admin Pages
+const SuperAdminDashboard = lazy(() => import('./pages/superadmin/Dashboard'));
+const ManageExaminers = lazy(() => import('./pages/superadmin/ManageExaminers'));
+const SuperAdminStudents = lazy(() => import('./pages/superadmin/ManageStudents'));
+const SuperAdminExams = lazy(() => import('./pages/superadmin/ManageExams'));
+const SystemLogs = lazy(() => import('./pages/superadmin/SystemLogs'));
 
-import { useState } from 'react';
+// Premium dynamic skeleton loading block for page loading states
+const PageFallback = () => (
+  <div style={{
+    display: 'flex', flexDirection: 'column', gap: 16, padding: 32,
+    background: 'var(--bg-primary)', minHeight: '80vh'
+  }}>
+    <div className="skeleton skeleton-title" style={{ width: '35%', height: 28 }} />
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
+      <div className="skeleton skeleton-card" style={{ height: 110 }} />
+      <div className="skeleton skeleton-card" style={{ height: 110 }} />
+      <div className="skeleton skeleton-card" style={{ height: 110 }} />
+    </div>
+    <div className="skeleton skeleton-card" style={{ height: 240 }} />
+  </div>
+);
 
 function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -59,90 +74,92 @@ function AppRoutes() {
   };
 
   return (
-    <Routes>
-      {/* Public */}
-      <Route path="/login" element={user ? <Navigate to={getDashboardRedirect()} /> : <Login />} />
-      <Route path="/register" element={user ? <Navigate to={getDashboardRedirect()} /> : <Register />} />
+    <Suspense fallback={<PageFallback />}>
+      <Routes>
+        {/* Public */}
+        <Route path="/login" element={user ? <Navigate to={getDashboardRedirect()} /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to={getDashboardRedirect()} /> : <Register />} />
 
-      {/* Student Routes */}
-      <Route path="/student/dashboard" element={
-        <ProtectedRoute allowedRoles="student">
-          <AppLayout><StudentDashboard /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/student/exam/:examId" element={
-        <ProtectedRoute allowedRoles="student">
-          <TakeExam />
-        </ProtectedRoute>
-      } />
-      <Route path="/student/results" element={
-        <ProtectedRoute allowedRoles="student">
-          <AppLayout><Results /></AppLayout>
-        </ProtectedRoute>
-      } />
+        {/* Student Routes */}
+        <Route path="/student/dashboard" element={
+          <ProtectedRoute allowedRoles="student">
+            <AppLayout><StudentDashboard /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/student/exam/:examId" element={
+          <ProtectedRoute allowedRoles="student">
+            <TakeExam />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/results" element={
+          <ProtectedRoute allowedRoles="student">
+            <AppLayout><Results /></AppLayout>
+          </ProtectedRoute>
+        } />
 
-      {/* Examiner Routes */}
-      <Route path="/examiner/dashboard" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><ExaminerDashboard /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/examiner/create-exam" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><CreateExam /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/examiner/students" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><ManageStudents /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/examiner/logs" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><ProctoringLogs /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/examiner/grade" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><GradeExam /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/examiner/results" element={
-        <ProtectedRoute allowedRoles="examiner">
-          <AppLayout><PublishResults /></AppLayout>
-        </ProtectedRoute>
-      } />
+        {/* Examiner Routes */}
+        <Route path="/examiner/dashboard" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><ExaminerDashboard /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/examiner/create-exam" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><CreateExam /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/examiner/students" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><ManageStudents /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/examiner/logs" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><ProctoringLogs /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/examiner/grade" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><GradeExam /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/examiner/results" element={
+          <ProtectedRoute allowedRoles="examiner">
+            <AppLayout><PublishResults /></AppLayout>
+          </ProtectedRoute>
+        } />
 
-      {/* Super Admin Routes */}
-      <Route path="/superadmin/dashboard" element={
-        <ProtectedRoute allowedRoles="superadmin">
-          <AppLayout><SuperAdminDashboard /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/superadmin/examiners" element={
-        <ProtectedRoute allowedRoles="superadmin">
-          <AppLayout><ManageExaminers /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/superadmin/students" element={
-        <ProtectedRoute allowedRoles="superadmin">
-          <AppLayout><SuperAdminStudents /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/superadmin/exams" element={
-        <ProtectedRoute allowedRoles="superadmin">
-          <AppLayout><SuperAdminExams /></AppLayout>
-        </ProtectedRoute>
-      } />
-      <Route path="/superadmin/logs" element={
-        <ProtectedRoute allowedRoles="superadmin">
-          <AppLayout><SystemLogs /></AppLayout>
-        </ProtectedRoute>
-      } />
+        {/* Super Admin Routes */}
+        <Route path="/superadmin/dashboard" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><SuperAdminDashboard /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/examiners" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><ManageExaminers /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/students" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><SuperAdminStudents /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/exams" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><SuperAdminExams /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/logs" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><SystemLogs /></AppLayout>
+          </ProtectedRoute>
+        } />
 
-      {/* Default redirect */}
-      <Route path="*" element={<Navigate to="/login" />} />
-    </Routes>
+        {/* Default redirect */}
+        <Route path="*" element={<Navigate to="/login" />} />
+      </Routes>
+    </Suspense>
   );
 }
 

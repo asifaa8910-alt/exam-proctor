@@ -1,17 +1,37 @@
+import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, Users, ClipboardCheck,
-  Award, LogOut, ShieldCheck, GraduationCap, Eye, BookOpen, X
+  Award, LogOut, ShieldCheck, GraduationCap, Eye, BookOpen, X,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    return localStorage.getItem('sidebar-collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    // Dynamically adjust system layout margin based on sidebar state
+    document.documentElement.style.setProperty('--sidebar-width', isCollapsed ? '72px' : '240px');
+  }, [isCollapsed]);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => {
+      const state = !prev;
+      localStorage.setItem('sidebar-collapsed', String(state));
+      return state;
+    });
   };
 
   const studentLinks = [
@@ -57,49 +77,98 @@ export default function Sidebar({ isOpen, onClose }) {
   return (
     <>
       {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
-      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-        <div className="sidebar-header">
+      <motion.aside 
+        className={`sidebar ${isOpen ? 'open' : ''}`}
+        animate={{ width: isCollapsed ? 72 : 240 }}
+        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+        style={{ overflow: 'hidden' }}
+      >
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="sidebar-logo">
-            <ShieldCheck size={28} />
-            <span>ExamProctor</span>
+            <ShieldCheck size={26} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            {!isCollapsed && (
+              <motion.span 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: '-0.5px' }}
+              >
+                ExamProctor
+              </motion.span>
+            )}
           </div>
+          
+          <button className="sidebar-collapse-btn" onClick={toggleCollapse} style={{ display: 'flex' }}>
+            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+          
           <button className="sidebar-close-btn" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
 
-        <div className="sidebar-role">
+        <div className="sidebar-role" style={{ padding: isCollapsed ? '16px 18px' : '16px 20px' }}>
           <div className="sidebar-role-icon">
             {getRoleIcon()}
           </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="sidebar-role-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user?.name}
-            </div>
-            <div className="sidebar-role-label" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {getRoleLabel()}
-            </div>
-          </div>
+          {!isCollapsed && (
+            <motion.div 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              style={{ minWidth: 0, flex: 1 }}
+            >
+              <div className="sidebar-role-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user?.name}
+              </div>
+              <div className="sidebar-role-label" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {getRoleLabel()}
+              </div>
+            </motion.div>
+          )}
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" style={{ padding: isCollapsed ? '20px 10px' : '20px 14px' }}>
           {links.map(link => (
             <NavLink
               key={link.to}
               to={link.to}
               onClick={onClose}
               className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+              style={{ justifyContent: isCollapsed ? 'center' : 'flex-start', padding: '10px' }}
+              title={isCollapsed ? link.label : ''}
             >
-              <link.icon size={18} />
-              <span>{link.label}</span>
+              <link.icon size={18} style={{ flexShrink: 0 }} />
+              {!isCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  style={{ marginLeft: 12 }}
+                >
+                  {link.label}
+                </motion.span>
+              )}
             </NavLink>
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <button className="sidebar-link logout" onClick={handleLogout}>
-            <LogOut size={18} />
-            <span>Logout</span>
+        <div className="sidebar-footer" style={{ padding: isCollapsed ? '10px' : '14px' }}>
+          <button 
+            className="sidebar-link logout" 
+            onClick={handleLogout}
+            style={{ justifyContent: isCollapsed ? 'center' : 'flex-start', padding: '10px' }}
+            title={isCollapsed ? 'Logout' : ''}
+          >
+            <LogOut size={18} style={{ flexShrink: 0 }} />
+            {!isCollapsed && (
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{ marginLeft: 12 }}
+              >
+                Logout
+              </motion.span>
+            )}
           </button>
         </div>
 
@@ -109,14 +178,27 @@ export default function Sidebar({ isOpen, onClose }) {
           left: 0;
           top: 0;
           bottom: 0;
-          width: var(--sidebar-width);
           background: var(--bg-sidebar);
           border-right: 1px solid var(--border);
           display: flex;
           flex-direction: column;
           z-index: 100;
           overflow-y: auto;
-          transition: transform var(--transition);
+        }
+        .sidebar-collapse-btn {
+          background: var(--bg-input);
+          border: 1px solid var(--border);
+          color: var(--text-secondary);
+          cursor: pointer;
+          padding: 5px;
+          border-radius: var(--radius-sm);
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+        }
+        .sidebar-collapse-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
         }
         .sidebar-close-btn {
           background: none;
@@ -140,9 +222,13 @@ export default function Sidebar({ isOpen, onClose }) {
           }
           .sidebar.open {
             transform: translateX(0);
+            width: 240px !important;
           }
           .sidebar-close-btn {
             display: flex;
+          }
+          .sidebar-collapse-btn {
+            display: none !important;
           }
           .sidebar-header {
             display: flex;
@@ -159,14 +245,11 @@ export default function Sidebar({ isOpen, onClose }) {
           align-items: center;
           gap: 10px;
           color: var(--accent);
-          font-size: 1.15rem;
-          font-weight: 800;
         }
         .sidebar-role {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 16px 20px;
           border-bottom: 1px solid var(--border);
         }
         .sidebar-role-icon {
@@ -191,7 +274,6 @@ export default function Sidebar({ isOpen, onClose }) {
           margin-top: 1px;
         }
         .sidebar-nav {
-          padding: 24px 14px;
           display: flex;
           flex-direction: column;
           gap: 6px;
@@ -200,8 +282,6 @@ export default function Sidebar({ isOpen, onClose }) {
         .sidebar-link {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 10px 16px;
           border-radius: var(--radius-md);
           color: var(--text-secondary);
           text-decoration: none;
@@ -224,7 +304,6 @@ export default function Sidebar({ isOpen, onClose }) {
           font-weight: 600;
         }
         .sidebar-footer {
-          padding: 14px;
           border-top: 1px solid var(--border);
         }
         .sidebar-link.logout {
@@ -235,7 +314,7 @@ export default function Sidebar({ isOpen, onClose }) {
           background: var(--danger-bg);
         }
         `}</style>
-      </aside>
+      </motion.aside>
     </>
   );
 }

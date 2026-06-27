@@ -15,6 +15,8 @@ export default function SystemLogs() {
     const [logTab, setLogTab] = useState('proctoring'); // 'proctoring' or 'audit'
     const [auditLogs, setAuditLogs] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [proctorSearch, setProctorSearch] = useState('');
+    const [proctorFilter, setProctorFilter] = useState('all'); // 'all' | 'flagged' | 'clean'
     const [auditLoading, setAuditLoading] = useState(false);
 
     useEffect(() => {
@@ -53,6 +55,19 @@ export default function SystemLogs() {
     const selectedSub = submissions.find(s => s.id === selectedSubId);
     const selectedSubExam = selectedSub ? exams.find(e => e.id === selectedSub.examId) : null;
     const selectedSubStudent = selectedSub ? students.find(s => s.id === selectedSub.studentId) : null;
+
+    // Filter proctoring submissions
+    const filteredSubmissions = submissions.filter(sub => {
+        const student = students.find(s => s.id === sub.studentId);
+        const exam = exams.find(e => e.id === sub.examId);
+        const nameMatch = (student?.name || '').toLowerCase().includes(proctorSearch.toLowerCase()) || 
+                          (exam?.title || '').toLowerCase().includes(proctorSearch.toLowerCase()) ||
+                          sub.studentId.toLowerCase().includes(proctorSearch.toLowerCase());
+        const isFlagged = sub.tabSwitches > 3;
+        if (proctorFilter === 'flagged') return nameMatch && isFlagged;
+        if (proctorFilter === 'clean') return nameMatch && !isFlagged;
+        return nameMatch;
+    });
 
     // Filter audit logs
     const filteredAuditLogs = auditLogs.filter(log => {
@@ -105,8 +120,10 @@ export default function SystemLogs() {
             {logTab === 'proctoring' && (
                 <div>
                     {loading ? (
-                        <div style={{ textAlign: 'center', padding: 40 }}>
-                            <h3>Loading system logs...</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <div className="skeleton skeleton-card" style={{ height: 60 }} />
+                            <div className="skeleton skeleton-card" style={{ height: 60 }} />
+                            <div className="skeleton skeleton-card" style={{ height: 60 }} />
                         </div>
                     ) : submissions.length === 0 ? (
                         <div className="card" style={{ textAlign: 'center', padding: 50, color: 'var(--text-muted)' }}>
@@ -117,11 +134,30 @@ export default function SystemLogs() {
                         <div className="admin-grade-layout">
                             {/* Submissions List */}
                             <div className="card" style={{ padding: 16 }}>
-                                <h4 style={{ fontSize: '0.9rem', marginBottom: 14, color: 'var(--text-secondary)' }}>
-                                    Timeline logs ({submissions.length})
-                                </h4>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto' }}>
-                                    {submissions.map(sub => {
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                                    <h4 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                        Timeline logs ({filteredSubmissions.length})
+                                    </h4>
+                                    <input 
+                                        className="form-input form-input-sm" 
+                                        placeholder="Search student or exam..." 
+                                        value={proctorSearch}
+                                        onChange={e => setProctorSearch(e.target.value)}
+                                        style={{ fontSize: '0.8rem', padding: '8px 12px' }}
+                                    />
+                                    <select 
+                                        className="form-select form-select-sm"
+                                        value={proctorFilter}
+                                        onChange={e => setProctorFilter(e.target.value)}
+                                        style={{ fontSize: '0.8rem', padding: '8px 12px' }}
+                                    >
+                                        <option value="all">All Submissions</option>
+                                        <option value="flagged">Flagged Only</option>
+                                        <option value="clean">Clean Only</option>
+                                    </select>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto' }}>
+                                    {filteredSubmissions.map(sub => {
                                         const student = students.find(s => s.id === sub.studentId);
                                         const exam = exams.find(e => e.id === sub.examId);
                                         const isFlagged = sub.tabSwitches > 3;

@@ -57,6 +57,9 @@ export async function initDb() {
       scheduledDate TEXT NOT NULL,
       assignedStudents TEXT NOT NULL, -- JSON stringified array
       resultsPublished INTEGER NOT NULL DEFAULT 0, -- 0 for false, 1 for true
+      resultsStatus TEXT NOT NULL DEFAULT 'pending',
+      publishedAt TEXT,
+      publishedBy TEXT,
       questions TEXT NOT NULL, -- JSON stringified array
       examinerId TEXT NOT NULL -- Isolated to examiner
     )
@@ -96,6 +99,50 @@ export async function initDb() {
       details TEXT NOT NULL
     )
   `);
+
+  // Create Violation Logs Table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS violation_logs (
+      id TEXT PRIMARY KEY,
+      studentId TEXT NOT NULL,
+      examId TEXT NOT NULL,
+      eventType TEXT NOT NULL,
+      timestamp TEXT NOT NULL
+    )
+  `);
+
+  // Create Snapshots Table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id TEXT PRIMARY KEY,
+      studentId TEXT NOT NULL,
+      examId TEXT NOT NULL,
+      image TEXT NOT NULL,
+      capturedAt TEXT NOT NULL
+    )
+  `);
+
+  // Create Indexes for optimized query lookup
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_submissions_exam ON submissions(examId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(studentId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_exams_examiner ON exams(examinerId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_users_examiner ON users(examinerId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_violation_logs_exam ON violation_logs(examId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_violation_logs_student ON violation_logs(studentId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_snapshots_exam ON snapshots(examId)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_snapshots_student ON snapshots(studentId)`);
+
+  // Run migrations dynamically on existing DB instances
+  try {
+    await db.exec("ALTER TABLE exams ADD COLUMN resultsStatus TEXT NOT NULL DEFAULT 'pending'");
+  } catch (e) {}
+  try {
+    await db.exec("ALTER TABLE exams ADD COLUMN publishedAt TEXT");
+  } catch (e) {}
+  try {
+    await db.exec("ALTER TABLE exams ADD COLUMN publishedBy TEXT");
+  } catch (e) {}
 
   // Seed default settings if empty
   const settingsCount = await db.get('SELECT COUNT(*) as count FROM settings');
@@ -204,8 +251,24 @@ export async function initDb() {
 
     for (const e of mockExams) {
       await db.run(
-        'INSERT INTO exams (id, title, subject, duration, totalMarks, status, createdBy, scheduledDate, assignedStudents, resultsPublished, questions, examinerId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [e.id, e.title, e.subject, e.duration, e.totalMarks, e.status, e.createdBy, e.scheduledDate, e.assignedStudents, e.resultsPublished, e.questions, e.examinerId]
+        'INSERT INTO exams (id, title, subject, duration, totalMarks, status, createdBy, scheduledDate, assignedStudents, resultsPublished, resultsStatus, publishedAt, publishedBy, questions, examinerId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          e.id,
+          e.title,
+          e.subject,
+          e.duration,
+          e.totalMarks,
+          e.status,
+          e.createdBy,
+          e.scheduledDate,
+          e.assignedStudents,
+          e.resultsPublished,
+          e.resultsPublished ? 'published' : 'pending',
+          e.resultsPublished ? new Date().toISOString() : null,
+          e.resultsPublished ? 'exm_kelly' : null,
+          e.questions,
+          e.examinerId
+        ]
       );
     }
 
@@ -268,6 +331,8 @@ export async function resetDbToDefaults() {
   await db.exec('DROP TABLE IF EXISTS submissions');
   await db.exec('DROP TABLE IF EXISTS settings');
   await db.exec('DROP TABLE IF EXISTS audit_logs');
+  await db.exec('DROP TABLE IF EXISTS violation_logs');
+  await db.exec('DROP TABLE IF EXISTS snapshots');
   await initDb();
   await addAuditLog('SYSTEM', 'RESET_DATABASE', 'The system database has been reset to defaults by the Super Admin.');
 }

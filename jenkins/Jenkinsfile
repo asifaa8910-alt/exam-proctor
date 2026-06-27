@@ -85,7 +85,8 @@ pipeline {
         stage('Stop Existing Containers') {
             steps {
                 echo 'Stopping current container deployment...'
-                sh 'docker compose down'
+                sh 'docker compose down || true'
+                sh 'docker rm -f exam_portal_backend exam_portal_frontend 2>/dev/null || true'
             }
         }
 
@@ -100,7 +101,7 @@ pipeline {
         stage('Deploy Latest Containers') {
             steps {
                 echo 'Starting containers using Docker Hub pulled images...'
-                sh 'docker compose up -d'
+                sh 'docker compose up -d --remove-orphans'
             }
         }
 

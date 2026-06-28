@@ -86,7 +86,7 @@ pipeline {
             steps {
                 echo 'Stopping current container deployment...'
                 sh 'docker compose down || true'
-                sh 'docker rm -f exam_portal_backend exam_portal_frontend 2>/dev/null || true'
+                sh 'docker rm -f exam_portal_backend exam_portal_frontend exam_portal_mongodb 2>/dev/null || true'
             }
         }
 

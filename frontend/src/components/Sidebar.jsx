@@ -54,6 +54,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { to: '/superadmin/students', icon: Users, label: 'Manage Students' },
     { to: '/superadmin/exams', icon: FileText, label: 'Manage Exams' },
     { to: '/superadmin/logs', icon: Eye, label: 'System Logs' },
+    { to: '/superadmin/audit-logs', icon: ClipboardCheck, label: 'Audit Logs' },
   ];
 
   const links = user?.role === 'superadmin'

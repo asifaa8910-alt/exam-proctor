@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getDb, addAuditLog, resetDbToDefaults } from '../config/db.js';
+import { getDb, resetDbToDefaults } from '../config/db.js';
 import { JWT_SECRET, authenticateToken, isSuperAdmin, isExaminer, isStaff } from '../middleware/authMiddleware.js';
 import { getActiveUsersList } from '../services/socketService.js';
+import { createAuditLog } from '../utils/auditLogger.js';
 
 const router = Router();
 
@@ -80,7 +81,16 @@ router.post('/register', async (req, res) => {
       [userId, name, email, hashedPassword, role, assignedExaminerId]
     );
 
-    await addAuditLog(email, 'REGISTER', `Registered new user "${name}" as "${role}"` + (assignedExaminerId ? ` assigned to Examiner "${assignedExaminerId}"` : ''));
+    await createAuditLog({
+      req,
+      user: { id: userId, name, email, role },
+      action: 'REGISTER',
+      entityType: 'User',
+      entityId: userId,
+      description: `Registered new user "${name}" as "${role}"` + (assignedExaminerId ? ` assigned to Examiner "${assignedExaminerId}"` : ''),
+      status: 'success',
+      metadata: { name, email, role, examinerId: assignedExaminerId }
+    });
 
     const token = jwt.sign(
       { id: userId, name, email, role, examinerId: assignedExaminerId },
@@ -127,11 +137,27 @@ router.post('/login', async (req, res) => {
     }
 
     if (!user) {
+      await createAuditLog({
+        req,
+        user: { email, role },
+        action: 'FAILED_LOGIN',
+        description: `Failed login attempt: user not found or role/examiner mismatch for email "${email}"`,
+        status: 'failed',
+        metadata: { email, role, examinerId }
+      });
       return res.status(401).json({ error: 'Invalid credentials or role/examiner mismatch' });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
+      await createAuditLog({
+        req,
+        user,
+        action: 'FAILED_LOGIN',
+        description: `Failed login attempt: incorrect password for user "${user.name}" (${email})`,
+        status: 'failed',
+        metadata: { email }
+      });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -141,7 +167,14 @@ router.post('/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    await addAuditLog(user.email, 'LOGIN', `Successful login as ${user.role}`);
+    await createAuditLog({
+      req,
+      user,
+      action: 'LOGIN',
+      description: `Successful login as ${user.role}`,
+      status: 'success',
+      metadata: { email }
+    });
 
     res.json({
       success: true,
@@ -226,7 +259,15 @@ router.post('/students', authenticateToken, isStaff, async (req, res) => {
       [studentId, name, email, defaultPasswordHash, 'student', targetExaminerId]
     );
 
-    await addAuditLog(req.user.email, 'ADD_STUDENT', `Created student profile for: ${email} assigned to ${targetExaminerId}`);
+    await createAuditLog({
+      req,
+      action: 'REGISTER',
+      entityType: 'User',
+      entityId: studentId,
+      description: `Created student profile for: ${email} assigned to ${targetExaminerId}`,
+      status: 'success',
+      metadata: { name, email, examinerId: targetExaminerId }
+    });
 
     res.status(201).json({
       success: true,
@@ -278,7 +319,14 @@ router.delete('/students/:id', authenticateToken, isStaff, async (req, res) => {
     // 5. Delete actual student user row
     await db.run('DELETE FROM users WHERE id = ?', [id]);
 
-    await addAuditLog(req.user.email, 'DELETE_STUDENT', `Cascaded deletion of student: ${student.email} (${student.name})`);
+    await createAuditLog({
+      req,
+      action: 'DELETE_USER',
+      entityType: 'User',
+      entityId: id,
+      description: `Cascaded deletion of student: ${student.email} (${student.name})`,
+      status: 'success'
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Student deletion error:', error);
@@ -335,7 +383,14 @@ router.delete('/users/:id', authenticateToken, isSuperAdmin, async (req, res) =>
       await db.run('UPDATE users SET examinerId = NULL WHERE examinerId = ?', [user.examinerId]);
     }
 
-    await addAuditLog(req.user.email, 'DELETE_USER', `Removed user: ${user.email} (Role: ${user.role})`);
+    await createAuditLog({
+      req,
+      action: user.role === 'examiner' ? 'DELETE_EXAMINER' : 'DELETE_USER',
+      entityType: 'User',
+      entityId: id,
+      description: `Removed user: ${user.email} (Role: ${user.role})`,
+      status: 'success'
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -377,7 +432,13 @@ router.post('/settings', authenticateToken, isSuperAdmin, async (req, res) => {
       await db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['announcement_banner', String(announcement_banner)]);
     }
     
-    await addAuditLog(req.user.email, 'UPDATE_SETTINGS', 'Updated system configurations');
+    await createAuditLog({
+      req,
+      action: 'UPDATE_SETTINGS',
+      description: 'Updated system configurations',
+      status: 'success',
+      metadata: { allow_student_registration, proctoring_enabled, max_tab_switches, announcement_banner }
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to save settings:', error);
@@ -423,7 +484,12 @@ router.post('/system/clear-logs', authenticateToken, isSuperAdmin, async (req, r
   const db = await getDb();
   try {
     await db.run('DELETE FROM submissions');
-    await addAuditLog(req.user.email, 'CLEAR_SUBMISSIONS_LOGS', 'Wiped all exam submissions and proctoring metrics');
+    await createAuditLog({
+      req,
+      action: 'CLEAR_SUBMISSIONS_LOGS',
+      description: 'Wiped all exam submissions and proctoring metrics',
+      status: 'success'
+    });
     res.json({ success: true, message: 'All submissions and proctoring logs deleted' });
   } catch (error) {
     console.error('Failed to clear submissions logs:', error);
@@ -511,11 +577,136 @@ router.post('/system/generate-mock', authenticateToken, isSuperAdmin, async (req
       }
     }
     
-    await addAuditLog(req.user.email, 'GENERATE_MOCK_DATA', `Generated ${count} mock exam submissions for system validation`);
+    await createAuditLog({
+      req,
+      action: 'GENERATE_MOCK_DATA',
+      description: `Generated ${count} mock exam submissions for system validation`,
+      status: 'success'
+    });
     res.json({ success: true, message: `Successfully generated ${count} mock submissions` });
   } catch (error) {
     console.error('Failed to generate mock data:', error);
     res.status(500).json({ error: 'Failed to generate mock submissions' });
+  }
+});
+
+// POST /logout - Logout user
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    await createAuditLog({
+      req,
+      action: 'LOGOUT',
+      description: `Successful logout for user "${req.user.name}" (${req.user.email})`,
+      status: 'success'
+    });
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Logout failed' });
+  }
+});
+
+// POST /change-password - Change user password
+router.post('/change-password', authenticateToken, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Old password and new password are required' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+
+  const db = await getDb();
+  try {
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isValidPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!isValidPassword) {
+      await createAuditLog({
+        req,
+        action: 'CHANGE_PASSWORD',
+        description: `Failed password change for user "${user.name}": incorrect old password`,
+        status: 'failed',
+        metadata: { oldPassword, newPassword }
+      });
+      return res.status(400).json({ error: 'Incorrect current password' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, req.user.id]);
+
+    await createAuditLog({
+      req,
+      action: 'CHANGE_PASSWORD',
+      description: `Successfully changed password for user "${user.name}"`,
+      status: 'success',
+      metadata: { oldPassword, newPassword }
+    });
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Password change error:', err);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
+// Super Admin only: Change any user's role
+router.put('/users/:id/role', authenticateToken, isSuperAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { role, examinerId } = req.body;
+
+  if (!role) {
+    return res.status(400).json({ error: 'Role is required' });
+  }
+
+  const db = await getDb();
+  try {
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'superadmin') {
+      return res.status(400).json({ error: 'Cannot change the Super Admin role' });
+    }
+
+    let assignedExaminerId = user.examinerId;
+    if (role === 'student') {
+      if (!examinerId) {
+        return res.status(400).json({ error: 'Examiner ID selection is required for student role' });
+      }
+      assignedExaminerId = examinerId;
+    } else if (role === 'examiner') {
+      if (!examinerId) {
+        return res.status(400).json({ error: 'Examiner ID designation is required for examiner role' });
+      }
+      assignedExaminerId = examinerId;
+    } else {
+      assignedExaminerId = null;
+    }
+
+    await db.run(
+      'UPDATE users SET role = ?, examinerId = ? WHERE id = ?',
+      [role, assignedExaminerId, id]
+    );
+
+    await createAuditLog({
+      req,
+      action: 'CHANGE_ROLE',
+      entityType: 'User',
+      entityId: id,
+      description: `Changed role of user "${user.name}" (${user.email}) from "${user.role}" to "${role}"`,
+      status: 'success',
+      metadata: { previousRole: user.role, newRole: role, examinerId: assignedExaminerId }
+    });
+
+    res.json({ success: true, message: 'User role updated successfully' });
+  } catch (err) {
+    console.error('Failed to change user role:', err);
+    res.status(500).json({ error: 'Failed to update user role' });
   }
 });
 

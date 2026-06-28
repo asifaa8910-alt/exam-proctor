@@ -5,9 +5,11 @@ import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDb } from './src/config/db.js';
+import { connectMongo } from './src/config/mongo.js';
 import authRouter from './src/routes/auth.js';
 import examsRouter from './src/routes/exams.js';
 import proctorRouter from './src/routes/proctor.js';
+import auditRouter from './src/routes/auditLogs.js';
 import { initSocket } from './src/services/socketService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,20 +50,21 @@ app.use('/api/auth', authRouter);
 app.use('/api/exams', examsRouter);
 app.use('/api/proctor', proctorRouter);
 app.use('/proctor', proctorRouter);
+app.use('/api/audit-logs', auditRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
-// Initialize database and start server
-initDb()
+// Initialize databases and start server
+Promise.all([initDb(), connectMongo()])
   .then(() => {
     server.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });
   })
   .catch(err => {
-    console.error('❌ Failed to initialize database:', err);
+    console.error('❌ Failed to initialize databases:', err);
     process.exit(1);
   });

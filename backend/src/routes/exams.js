@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { getDb, addAuditLog } from '../config/db.js';
+import { getDb } from '../config/db.js';
 import { authenticateToken, isStaff, isSuperAdmin } from '../middleware/authMiddleware.js';
+import { createAuditLog } from '../utils/auditLogger.js';
 
 const router = Router();
 
@@ -99,7 +100,15 @@ router.post('/', authenticateToken, isStaff, async (req, res) => {
       examinerId: targetExaminerId
     };
 
-    await addAuditLog(req.user.email, 'CREATE_EXAM', `Created exam "${title}" (ID: ${examId})`);
+    await createAuditLog({
+      req,
+      action: 'CREATE_EXAM',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `Created exam "${title}" (ID: ${examId})`,
+      status: 'success',
+      metadata: { title, subject, duration, totalMarks, scheduledDate }
+    });
     res.status(201).json({ success: true, exam: newExam });
   } catch (error) {
     console.error('Failed to create exam:', error);
@@ -126,7 +135,14 @@ router.delete('/:id', authenticateToken, isStaff, async (req, res) => {
     await db.run('DELETE FROM exams WHERE id = ?', [id]);
     await db.run('DELETE FROM submissions WHERE examId = ?', [id]); // clean up submissions
 
-    await addAuditLog(req.user.email, 'DELETE_EXAM', `Deleted exam ID: ${id} and all related submissions`);
+    await createAuditLog({
+      req,
+      action: 'DELETE_EXAM',
+      entityType: 'Exam',
+      entityId: id,
+      description: `Deleted exam ID: ${id} and all related submissions`,
+      status: 'success'
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to delete exam:', error);
@@ -249,7 +265,15 @@ router.post('/:examId/submit', authenticateToken, async (req, res) => {
       isGraded: allGraded
     };
 
-    await addAuditLog(req.user.email, 'SUBMIT_EXAM', `Submitted exam ID: ${examId} with ${tabSwitches || 0} tab switches`);
+    await createAuditLog({
+      req,
+      action: 'SUBMIT_EXAM',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `Submitted exam ID: ${examId} with ${tabSwitches || 0} tab switches`,
+      status: 'success',
+      metadata: { examId, tabSwitches, snapshotCount: webcamSnapshots ? webcamSnapshots.length : 0 }
+    });
     res.status(201).json({ success: true, submission: newSubmission });
   } catch (error) {
     console.error('Failed to submit exam:', error);
@@ -314,7 +338,15 @@ router.post('/submissions/:submissionId/grade', authenticateToken, isStaff, asyn
       isGraded: allGraded
     };
 
-    await addAuditLog(req.user.email, 'GRADE_EXAM', `Graded student submission ID: ${submissionId} (Score: ${totalScore})`);
+    await createAuditLog({
+      req,
+      action: 'GRADE_EXAM',
+      entityType: 'Submission',
+      entityId: submissionId,
+      description: `Graded student submission ID: ${submissionId} (Score: ${totalScore})`,
+      status: 'success',
+      metadata: { submissionId, totalScore, isGraded: allGraded }
+    });
     res.json({ success: true, submission: updatedSubmission });
   } catch (error) {
     console.error('Failed to grade submission:', error);
@@ -393,7 +425,15 @@ router.put('/publish/:examId', authenticateToken, isStaff, async (req, res) => {
       [publishedAt, publishedBy, examId]
     );
 
-    await addAuditLog(req.user.email, 'PUBLISH_RESULTS', `Published results for exam "${exam.title}" (ID: ${examId})`);
+    await createAuditLog({
+      req,
+      action: 'PUBLISH_RESULTS',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `Published results for exam "${exam.title}" (ID: ${examId})`,
+      status: 'success',
+      metadata: { examId }
+    });
 
     // Broadcast results published real-time activity event
     if (req.io) {
@@ -439,7 +479,15 @@ router.post('/:examId/toggle-publish', authenticateToken, isStaff, async (req, r
       [newPublishState, resultsStatus, publishedAt, publishedBy, examId]
     );
 
-    await addAuditLog(req.user.email, 'PUBLISH_RESULTS', `${newPublishState === 1 ? 'Published' : 'Unpublished'} results for exam ID: ${examId}`);
+    await createAuditLog({
+      req,
+      action: 'PUBLISH_RESULTS',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `${newPublishState === 1 ? 'Published' : 'Unpublished'} results for exam ID: ${examId}`,
+      status: 'success',
+      metadata: { examId, publishState: newPublishState }
+    });
 
     if (req.io && newPublishState === 1) {
       req.io.emit('results-published', { examId, examTitle: exam.title, publishedAt, publishedBy });
@@ -649,6 +697,214 @@ router.post('/generate-from-document', authenticateToken, isStaff, async (req, r
   } catch (error) {
     console.error('Failed to generate questions from document:', error);
     res.status(500).json({ error: 'Failed to process document and generate questions' });
+  }
+});
+
+// POST /:examId/start - Student starts taking an exam
+router.post('/:examId/start', authenticateToken, async (req, res) => {
+  const { examId } = req.params;
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT * FROM exams WHERE id = ?', [examId]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    await createAuditLog({
+      req,
+      action: 'START_EXAM',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `Student "${req.user.name}" (${req.user.email}) started taking exam "${exam.title}" (ID: ${examId})`,
+      status: 'success',
+      metadata: { examId, examTitle: exam.title }
+    });
+
+    res.json({ success: true, message: 'Exam start logged successfully' });
+  } catch (err) {
+    console.error('Failed to log exam start:', err);
+    res.status(500).json({ error: 'Failed to record exam start' });
+  }
+});
+
+// PUT /:id - Update an exam (Staff only)
+router.put('/:id', authenticateToken, isStaff, async (req, res) => {
+  const { id } = req.params;
+  const { title, subject, duration, totalMarks, scheduledDate, assignedStudents, questions } = req.body;
+
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT * FROM exams WHERE id = ?', [id]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    // Verify ownership
+    if (req.user.role !== 'superadmin' && exam.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Access denied: not your exam' });
+    }
+
+    const updatedTitle = title !== undefined ? title : exam.title;
+    const updatedSubject = subject !== undefined ? subject : exam.subject;
+    const updatedDuration = duration !== undefined ? parseInt(duration) : exam.duration;
+    const updatedTotalMarks = totalMarks !== undefined ? parseInt(totalMarks) : exam.totalMarks;
+    const updatedScheduledDate = scheduledDate !== undefined ? scheduledDate : exam.scheduledDate;
+    const updatedAssigned = assignedStudents !== undefined ? JSON.stringify(assignedStudents) : exam.assignedStudents;
+    const updatedQuestions = questions !== undefined ? JSON.stringify(questions) : exam.questions;
+
+    await db.run(
+      `UPDATE exams 
+       SET title = ?, subject = ?, duration = ?, totalMarks = ?, scheduledDate = ?, assignedStudents = ?, questions = ? 
+       WHERE id = ?`,
+      [updatedTitle, updatedSubject, updatedDuration, updatedTotalMarks, updatedScheduledDate, updatedAssigned, updatedQuestions, id]
+    );
+
+    await createAuditLog({
+      req,
+      action: 'UPDATE_EXAM',
+      entityType: 'Exam',
+      entityId: id,
+      description: `Updated details for exam "${updatedTitle}" (ID: ${id})`,
+      status: 'success',
+      metadata: { id, title: updatedTitle, subject: updatedSubject, duration: updatedDuration }
+    });
+
+    res.json({ success: true, message: 'Exam updated successfully' });
+  } catch (err) {
+    console.error('Failed to update exam:', err);
+    res.status(500).json({ error: 'Failed to update exam' });
+  }
+});
+
+// POST /:id/questions - Create/Add a question to an exam (Staff only)
+router.post('/:id/questions', authenticateToken, isStaff, async (req, res) => {
+  const { id } = req.params;
+  const { question } = req.body;
+
+  if (!question || !question.text || !question.type || !question.marks) {
+    return res.status(400).json({ error: 'Invalid question details' });
+  }
+
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT * FROM exams WHERE id = ?', [id]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    // Verify ownership
+    if (req.user.role !== 'superadmin' && exam.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Access denied: not your exam' });
+    }
+
+    const currentQuestions = JSON.parse(exam.questions);
+    const qId = question.id || `q_${Date.now()}`;
+    const newQuestion = { ...question, id: qId };
+    currentQuestions.push(newQuestion);
+
+    await db.run('UPDATE exams SET questions = ? WHERE id = ?', [JSON.stringify(currentQuestions), id]);
+
+    await createAuditLog({
+      req,
+      action: 'CREATE_QUESTION',
+      entityType: 'Question',
+      entityId: qId,
+      description: `Added question (ID: ${qId}) to exam "${exam.title}"`,
+      status: 'success',
+      metadata: { examId: id, question: newQuestion }
+    });
+
+    res.json({ success: true, question: newQuestion });
+  } catch (err) {
+    console.error('Failed to add question:', err);
+    res.status(500).json({ error: 'Failed to add question' });
+  }
+});
+
+// PUT /:id/questions/:qId - Update a question in an exam (Staff only)
+router.put('/:id/questions/:qId', authenticateToken, isStaff, async (req, res) => {
+  const { id, qId } = req.params;
+  const { questionUpdates } = req.body;
+
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT * FROM exams WHERE id = ?', [id]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    // Verify ownership
+    if (req.user.role !== 'superadmin' && exam.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Access denied: not your exam' });
+    }
+
+    const currentQuestions = JSON.parse(exam.questions);
+    const qIdx = currentQuestions.findIndex(q => q.id === qId);
+    if (qIdx === -1) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    const updatedQuestion = { ...currentQuestions[qIdx], ...questionUpdates, id: qId };
+    currentQuestions[qIdx] = updatedQuestion;
+
+    await db.run('UPDATE exams SET questions = ? WHERE id = ?', [JSON.stringify(currentQuestions), id]);
+
+    await createAuditLog({
+      req,
+      action: 'UPDATE_QUESTION',
+      entityType: 'Question',
+      entityId: qId,
+      description: `Updated question (ID: ${qId}) in exam "${exam.title}"`,
+      status: 'success',
+      metadata: { examId: id, question: updatedQuestion }
+    });
+
+    res.json({ success: true, question: updatedQuestion });
+  } catch (err) {
+    console.error('Failed to update question:', err);
+    res.status(500).json({ error: 'Failed to update question' });
+  }
+});
+
+// DELETE /:id/questions/:qId - Delete a question from an exam (Staff only)
+router.delete('/:id/questions/:qId', authenticateToken, isStaff, async (req, res) => {
+  const { id, qId } = req.params;
+
+  const db = await getDb();
+  try {
+    const exam = await db.get('SELECT * FROM exams WHERE id = ?', [id]);
+    if (!exam) {
+      return res.status(404).json({ error: 'Exam not found' });
+    }
+
+    // Verify ownership
+    if (req.user.role !== 'superadmin' && exam.examinerId !== req.user.examinerId) {
+      return res.status(403).json({ error: 'Access denied: not your exam' });
+    }
+
+    const currentQuestions = JSON.parse(exam.questions);
+    const filteredQuestions = currentQuestions.filter(q => q.id !== qId);
+
+    if (currentQuestions.length === filteredQuestions.length) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    await db.run('UPDATE exams SET questions = ? WHERE id = ?', [JSON.stringify(filteredQuestions), id]);
+
+    await createAuditLog({
+      req,
+      action: 'DELETE_QUESTION',
+      entityType: 'Question',
+      entityId: qId,
+      description: `Deleted question (ID: ${qId}) from exam "${exam.title}"`,
+      status: 'success',
+      metadata: { examId: id, deletedQuestionId: qId }
+    });
+
+    res.json({ success: true, message: 'Question deleted successfully' });
+  } catch (err) {
+    console.error('Failed to delete question:', err);
+    res.status(500).json({ error: 'Failed to delete question' });
   }
 });
 

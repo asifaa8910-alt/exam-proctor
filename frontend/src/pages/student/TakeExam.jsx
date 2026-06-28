@@ -47,6 +47,13 @@ export default function TakeExam() {
         } catch { /* ignore */ }
     }, [examId, user.id]);
 
+    // Log student exam start
+    useEffect(() => {
+        if (examId) {
+            api.post(`/exams/${examId}/start`).catch(err => console.error('Failed to log exam start:', err));
+        }
+    }, [examId]);
+
     // Auto-save answers every 10 seconds
     useEffect(() => {
         if (submitted) return;

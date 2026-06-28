@@ -37,6 +37,15 @@ export const api = {
     return handleResponse(res);
   },
 
+  put: async (endpoint, body) => {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    return handleResponse(res);
+  },
+
   delete: async (endpoint) => {
     const res = await fetch(`${API_URL}${endpoint}`, {
       method: 'DELETE',

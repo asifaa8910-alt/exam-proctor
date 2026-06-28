@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../config/db.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { createAuditLog } from '../utils/auditLogger.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,14 +25,26 @@ router.post('/log', authenticateToken, async (req, res) => {
     const id = `vlog_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const eventTimestamp = timestamp || new Date().toISOString();
 
+    // Get student details for a richer real-time notification
+    const student = await db.get('SELECT name, email, role FROM users WHERE id = ?', [studentId]);
+    const studentName = student ? student.name : 'Unknown Student';
+    const studentEmail = student ? student.email : 'unknown';
+
     await db.run(
       'INSERT INTO violation_logs (id, studentId, examId, eventType, timestamp) VALUES (?, ?, ?, ?, ?)',
       [id, studentId, examId, actualType, eventTimestamp]
     );
 
-    // Get student name for a richer real-time notification
-    const student = await db.get('SELECT name FROM users WHERE id = ?', [studentId]);
-    const studentName = student ? student.name : 'Unknown Student';
+    await createAuditLog({
+      req,
+      user: student ? { id: studentId, name: studentName, email: studentEmail, role: student.role } : null,
+      action: 'PROCTORING_VIOLATION',
+      entityType: 'Exam',
+      entityId: examId,
+      description: `Student "${studentName}" triggered violation: ${actualType.replace(/_/g, ' ')}`,
+      status: 'success',
+      metadata: { studentId, studentName, examId, eventType: actualType }
+    });
 
     const payload = {
       id,

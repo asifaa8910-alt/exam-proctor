@@ -11,12 +11,13 @@ import {
 
 export default function SuperAdminDashboard() {
     const { user, settings, updateSettings } = useAuth();
-    const { exams, submissions, fetchExams, fetchSubmissions } = useExam();
+    const { exams, submissions } = useExam();
     const [stats, setStats] = useState({
-        studentsCount: 0,
-        examinersCount: 0,
-        examsCount: 0,
-        submissionsCount: 0
+        totalLogs: 0,
+        failedLogins: 0,
+        examsCreatedToday: 0,
+        proctoringViolations: 0,
+        activeUsersToday: 0
     });
     const [examiners, setExaminers] = useState([]);
     const [recentLogs, setRecentLogs] = useState([]);
@@ -42,33 +43,36 @@ export default function SuperAdminDashboard() {
 
     const fetchSystemOverview = async () => {
         try {
-            // Fetch all students (returns all for superadmin)
-            const studentsData = await api.get('/auth/students');
-            
-            // Fetch all examiners list
+            // Fetch audit stats from backend
+            const statsData = await api.get('/audit-logs/stats');
+            if (statsData.success) {
+                setStats(statsData.stats);
+            }
+
+            // Fetch latest 10 logs from backend
+            const logsData = await api.get('/audit-logs?limit=10');
+            if (logsData.success) {
+                // Map the DB logs into UI timeline log structures
+                const mappedLogs = (logsData.logs || []).map(l => {
+                    let color = 'var(--accent)';
+                    if (l.action === 'FAILED_LOGIN' || l.action === 'PROCTORING_VIOLATION') color = 'var(--danger)';
+                    else if (l.action.startsWith('CREATE_') || l.action === 'LOGIN') color = 'var(--success)';
+                    else if (l.action.startsWith('DELETE_')) color = 'var(--warning)';
+
+                    return {
+                        type: 'audit',
+                        text: `${l.userName} (${l.userRole}): ${l.action}`,
+                        time: l.createdAt,
+                        detail: l.description,
+                        color
+                    };
+                });
+                setRecentLogs(mappedLogs);
+            }
+
+            // Also keep standard examiner list for management if needed
             const examinersData = await api.get('/auth/examiners-list');
             setExaminers(examinersData.examiners || []);
-            
-            setStats({
-                studentsCount: studentsData.students?.length || 0,
-                examinersCount: examinersData.examiners?.length || 0,
-                examsCount: exams.length,
-                submissionsCount: submissions.length
-            });
-
-            // Generate recent logs from submissions
-            const logs = submissions.map(s => {
-                const exam = exams.find(e => e.id === s.examId);
-                return {
-                    type: 'submission',
-                    text: `Student ID "${s.studentId}" submitted exam "${exam?.title || s.examId}"`,
-                    time: s.submittedAt,
-                    detail: `Score: ${s.totalScore} | Tab switches: ${s.tabSwitches}`,
-                    color: s.tabSwitches > 3 ? 'var(--danger)' : 'var(--success)'
-                };
-            });
-            
-            setRecentLogs(logs.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 10));
         } catch (err) {
             console.error('Failed to load superadmin overview:', err);
         } finally {
@@ -113,20 +117,17 @@ export default function SuperAdminDashboard() {
     }, [socket]);
 
     const recentActivityLogs = useMemo(() => {
-        const staticLogs = submissions.map(s => {
-            const exam = exams.find(e => e.id === s.examId);
-            return {
-                type: 'submission',
-                text: `Student "${s.studentName || s.studentId}" submitted "${exam?.title || s.examId}"`,
-                time: s.submittedAt,
-                detail: `Score: ${s.totalScore} | Tab switches: ${s.tabSwitches}`,
-                color: s.tabSwitches > 3 ? 'var(--danger)' : 'var(--success)'
-            };
-        });
+        const mappedLiveLogs = liveLogs.map(l => ({
+            type: 'live',
+            text: l.text,
+            time: l.time,
+            detail: l.detail,
+            color: l.color || 'var(--accent)'
+        }));
         
-        const combined = [...liveLogs, ...staticLogs];
+        const combined = [...mappedLiveLogs, ...recentLogs];
         return combined.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 10);
-    }, [submissions, exams, liveLogs]);
+    }, [recentLogs, liveLogs]);
 
     useEffect(() => {
         if (user) {
@@ -294,33 +295,40 @@ export default function SuperAdminDashboard() {
                     )}
 
                     {/* Stats Grid */}
-                    <div className="stats-grid" style={{ marginBottom: 30 }}>
+                    <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 30 }}>
                         <div className="stat-card">
-                            <div className="stat-icon red"><ShieldCheck size={22} /></div>
+                            <div className="stat-icon purple"><Database size={22} /></div>
                             <div className="stat-info">
-                                <h3>{stats.examinersCount}</h3>
-                                <p>Total Examiners</p>
+                                <h3>{stats.totalLogs}</h3>
+                                <p>Total Logs</p>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon red"><ShieldAlert size={22} /></div>
+                            <div className="stat-info">
+                                <h3>{stats.failedLogins}</h3>
+                                <p>Failed Logins</p>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon green"><FileText size={22} /></div>
+                            <div className="stat-info">
+                                <h3>{stats.examsCreatedToday}</h3>
+                                <p>Exams Created Today</p>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon orange" style={{ color: 'var(--warning)', background: 'var(--warning-bg)' }}><AlertTriangle size={22} /></div>
+                            <div className="stat-info">
+                                <h3>{stats.proctoringViolations}</h3>
+                                <p>Proctoring Violations</p>
                             </div>
                         </div>
                         <div className="stat-card">
                             <div className="stat-icon blue"><Users size={22} /></div>
                             <div className="stat-info">
-                                <h3>{stats.studentsCount}</h3>
-                                <p>Total Students</p>
-                            </div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-icon purple"><FileText size={22} /></div>
-                            <div className="stat-info">
-                                <h3>{stats.examsCount}</h3>
-                                <p>Exams Created</p>
-                            </div>
-                        </div>
-                        <div className="stat-card">
-                            <div className="stat-icon green"><ClipboardCheck size={22} /></div>
-                            <div className="stat-info">
-                                <h3>{stats.submissionsCount}</h3>
-                                <p>Total Submissions</p>
+                                <h3>{stats.activeUsersToday}</h3>
+                                <p>Active Users Today</p>
                             </div>
                         </div>
                     </div>

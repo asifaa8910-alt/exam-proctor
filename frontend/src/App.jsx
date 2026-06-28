@@ -31,6 +31,7 @@ const ManageExaminers = lazy(() => import('./pages/superadmin/ManageExaminers'))
 const SuperAdminStudents = lazy(() => import('./pages/superadmin/ManageStudents'));
 const SuperAdminExams = lazy(() => import('./pages/superadmin/ManageExams'));
 const SystemLogs = lazy(() => import('./pages/superadmin/SystemLogs'));
+const AuditLogs = lazy(() => import('./pages/superadmin/AuditLogs'));
 
 // Premium dynamic skeleton loading block for page loading states
 const PageFallback = () => (
@@ -155,6 +156,11 @@ function AppRoutes() {
         <Route path="/superadmin/logs" element={
           <ProtectedRoute allowedRoles="superadmin">
             <AppLayout><SystemLogs /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/superadmin/audit-logs" element={
+          <ProtectedRoute allowedRoles="superadmin">
+            <AppLayout><AuditLogs /></AppLayout>
           </ProtectedRoute>
         } />
 

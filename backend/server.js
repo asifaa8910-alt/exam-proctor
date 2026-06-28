@@ -68,3 +68,4 @@ Promise.all([initDb(), connectMongo()])
     console.error('❌ Failed to initialize databases:', err);
     process.exit(1);
   });
+// Trigger Jenkins build after freeing ports

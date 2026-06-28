@@ -58,7 +58,19 @@ export default function AdminDashboard() {
 
             {/* Stats — clickable to expand details */}
             <div className="stats-grid">
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => toggleSection('exams')}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => toggleSection('exams')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleSection('exams');
+                        }
+                    }}
+                >
                     <div className="stat-icon purple"><FileText size={22} /></div>
                     <div className="stat-info">
                         <h3>{exams.length}</h3>
@@ -66,7 +78,19 @@ export default function AdminDashboard() {
                     </div>
                     {expandedSection === 'exams' ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
                 </div>
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => toggleSection('students')}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => toggleSection('students')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleSection('students');
+                        }
+                    }}
+                >
                     <div className="stat-icon blue"><Users size={22} /></div>
                     <div className="stat-info">
                         <h3>{students.length}</h3>
@@ -74,14 +98,38 @@ export default function AdminDashboard() {
                     </div>
                     {expandedSection === 'students' ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
                 </div>
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => toggleSection('grading')}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => toggleSection('grading')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleSection('grading');
+                        }
+                    }}
+                >
                     <div className="stat-icon orange"><ClipboardCheck size={22} /></div>
                     <div className="stat-info">
                         <h3>{pendingGrading.length}</h3>
                         <p>Pending Grading</p>
                     </div>
                 </div>
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => toggleSection('flagged')}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => toggleSection('flagged')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleSection('flagged');
+                        }
+                    }}
+                >
                     <div className="stat-icon red"><AlertTriangle size={22} /></div>
                     <div className="stat-info">
                         <h3>{flaggedStudents.length}</h3>
@@ -117,6 +165,14 @@ export default function AdminDashboard() {
                                             border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 0.15s'
                                         }}
                                         onClick={() => setExpandedExam(prev => prev === exam.id ? null : exam.id)}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                setExpandedExam(prev => prev === exam.id ? null : exam.id);
+                                            }
+                                        }}
                                     >
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <div>

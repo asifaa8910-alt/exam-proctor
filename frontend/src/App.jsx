@@ -5,6 +5,8 @@ import { ExamProvider } from './context/ExamContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
+import { MotionConfig } from 'framer-motion';
+
 
 // Lazy load all platform pages for optimal code splitting
 const Login = lazy(() => import('./pages/Login'));
@@ -168,7 +170,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ExamProvider>
-          <AppRoutes />
+          <MotionConfig reducedMotion="user">
+            <AppRoutes />
+          </MotionConfig>
         </ExamProvider>
       </AuthProvider>
     </BrowserRouter>

@@ -564,7 +564,7 @@ export default function TakeExam() {
 
             {/* Submit Modal */}
             {showSubmitModal && (
-                <div className="modal-overlay" onClick={() => setShowSubmitModal(false)}>
+                <div className="modal-overlay" onClick={() => setShowSubmitModal(false)} aria-hidden="true">
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <h2>Submit Exam?</h2>
                         <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>

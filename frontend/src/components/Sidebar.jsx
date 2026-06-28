@@ -76,7 +76,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
   return (
     <>
-      {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
+      {isOpen && <div className="sidebar-overlay" onClick={onClose} aria-hidden="true" />}
       <motion.aside 
         className={`sidebar ${isOpen ? 'open' : ''}`}
         animate={{ width: isCollapsed ? 72 : 240 }}

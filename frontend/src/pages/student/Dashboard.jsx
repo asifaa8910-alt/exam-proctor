@@ -55,14 +55,38 @@ export default function StudentDashboard() {
 
             {/* Stats */}
             <div className="stats-grid">
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => document.getElementById('upcoming-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => document.getElementById('upcoming-section')?.scrollIntoView({ behavior: 'smooth' })}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            document.getElementById('upcoming-section')?.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    }}
+                >
                     <div className="stat-icon purple"><BookOpen size={22} /></div>
                     <div className="stat-info">
                         <h3>{upcoming.length}</h3>
                         <p>Upcoming Exams</p>
                     </div>
                 </div>
-                <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => document.getElementById('completed-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                <div 
+                    className="stat-card" 
+                    style={{ cursor: 'pointer' }} 
+                    onClick={() => document.getElementById('completed-section')?.scrollIntoView({ behavior: 'smooth' })}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            document.getElementById('completed-section')?.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    }}
+                >
                     <div className="stat-icon green"><CheckCircle size={22} /></div>
                     <div className="stat-info">
                         <h3>{completed.length}</h3>

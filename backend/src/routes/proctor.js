@@ -11,7 +11,6 @@ const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// POST /proctor/log - Log a proctor violation
 router.post('/log', authenticateToken, async (req, res) => {
   const { studentId, examId, eventType, type, timestamp } = req.body;
   const actualType = eventType || type;
@@ -25,7 +24,6 @@ router.post('/log', authenticateToken, async (req, res) => {
     const id = `vlog_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const eventTimestamp = timestamp || new Date().toISOString();
 
-    // Get student details for a richer real-time notification
     const student = await db.get('SELECT name, email, role FROM users WHERE id = ?', [studentId]);
     const studentName = student ? student.name : 'Unknown Student';
     const studentEmail = student ? student.email : 'unknown';
@@ -55,7 +53,6 @@ router.post('/log', authenticateToken, async (req, res) => {
       timestamp: eventTimestamp
     };
 
-    // Broadcast violation event in real-time
     if (req.io) {
       req.io.emit('violation', payload);
       req.io.emit('activity', {
@@ -74,7 +71,6 @@ router.post('/log', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /proctor/snapshot - Upload webcam snapshot image
 router.post('/snapshot', authenticateToken, async (req, res) => {
   const { studentId, examId, image } = req.body;
 
@@ -84,7 +80,6 @@ router.post('/snapshot', authenticateToken, async (req, res) => {
 
   const db = await getDb();
   try {
-    // Process base64 JPEG snapshot and write to file
     const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, 'base64');
     
@@ -119,7 +114,6 @@ router.post('/snapshot', authenticateToken, async (req, res) => {
       capturedAt
     };
 
-    // Broadcast snapshot event in real-time
     if (req.io) {
       req.io.emit('snapshot', payload);
     }

@@ -8,7 +8,7 @@ import Navbar from './components/Navbar';
 import { MotionConfig } from 'framer-motion';
 
 
-// Lazy load all platform pages for optimal code splitting
+// Route-based lazy loading
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 
@@ -33,7 +33,7 @@ const SuperAdminExams = lazy(() => import('./pages/superadmin/ManageExams'));
 const SystemLogs = lazy(() => import('./pages/superadmin/SystemLogs'));
 const AuditLogs = lazy(() => import('./pages/superadmin/AuditLogs'));
 
-// Premium dynamic skeleton loading block for page loading states
+// Page loading placeholder skeleton
 const PageFallback = () => (
   <div style={{
     display: 'flex', flexDirection: 'column', gap: 16, padding: 32,

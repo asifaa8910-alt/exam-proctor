@@ -3,7 +3,6 @@ import { User } from '../models/User.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 
-// Helper to convert any string ID into a valid 24-character hexadecimal ObjectId
 export function toObjectId(id) {
   if (!id) return null;
   if (mongoose.Types.ObjectId.isValid(id)) {
@@ -24,7 +23,6 @@ export async function createAuditLog({
   metadata = {}
 }) {
   try {
-    // 1. Resolve user details
     const activeUser = user || (req && req.user);
     const email = activeUser ? activeUser.email : 'unknown';
     const name = activeUser ? activeUser.name : 'Unknown User';
@@ -32,7 +30,6 @@ export async function createAuditLog({
     const userIdString = activeUser ? activeUser.id : null;
     const userIdObj = userIdString ? toObjectId(userIdString) : null;
 
-    // 2. Resolve request details (IP Address & User Agent)
     let ipAddress = 'unknown';
     let userAgent = 'unknown';
     if (req) {
@@ -43,7 +40,6 @@ export async function createAuditLog({
       userAgent = req.headers['user-agent'] || 'unknown';
     }
 
-    // 3. Mask sensitive information in metadata (like passwords and tokens)
     const cleanedMetadata = { ...metadata };
     const sensitiveKeys = ['password', 'token', 'oldPassword', 'newPassword', 'accessToken', 'refreshToken'];
     const maskSensitive = (obj) => {
@@ -58,7 +54,6 @@ export async function createAuditLog({
     };
     maskSensitive(cleanedMetadata);
 
-    // Also check description for plain passwords or tokens and mask them
     let cleanedDescription = description;
     if (metadata.password) {
       cleanedDescription = cleanedDescription.replace(metadata.password, '********');
@@ -67,34 +62,36 @@ export async function createAuditLog({
       cleanedDescription = cleanedDescription.replace(metadata.newPassword, '********');
     }
 
-    // 4. Upsert User in MongoDB for population/refs to work correctly
-    if (userIdObj && activeUser) {
-      await User.findByIdAndUpdate(
-        userIdObj,
-        { name, email, role },
-        { upsert: true, new: true }
-      ).catch(err => console.error('Failed to sync User to MongoDB:', err.message));
+    if (mongoose.connection.readyState === 1) {
+      if (userIdObj && activeUser) {
+        await User.findByIdAndUpdate(
+          userIdObj,
+          { name, email, role },
+          { upsert: true, new: true }
+        ).catch(err => console.error('Failed to sync User to MongoDB:', err.message));
+      }
+
+      const auditLog = new AuditLog({
+        userId: userIdObj,
+        userName: name,
+        userRole: role,
+        action,
+        entityType,
+        entityId: entityId ? String(entityId) : undefined,
+        description: cleanedDescription,
+        ipAddress,
+        userAgent,
+        status,
+        metadata: cleanedMetadata
+      });
+
+      await auditLog.save();
+    } else {
+      console.log(`[AuditLog] MongoDB not connected. Skipping remote log for: ${action} by ${email}`);
     }
-
-    // 5. Create and save AuditLog document
-    const auditLog = new AuditLog({
-      userId: userIdObj,
-      userName: name,
-      userRole: role,
-      action,
-      entityType,
-      entityId: entityId ? String(entityId) : undefined,
-      description: cleanedDescription,
-      ipAddress,
-      userAgent,
-      status,
-      metadata: cleanedMetadata
-    });
-
-    await auditLog.save();
     console.log(`[AuditLog] Recorded action: ${action} by ${email}`);
   } catch (err) {
-    // Never crash the main app if logging fails
-    console.error('❌ createAuditLog error:', err.message);
+    console.error('AuditLog execution failed:', err.message);
   }
 }
+

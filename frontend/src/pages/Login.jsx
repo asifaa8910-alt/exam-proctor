@@ -38,6 +38,7 @@ export default function Login() {
                         </div>
                         <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: 10, color: '#ffffff' }}>
                             Intelligent Online Assessment & Integrity Proctoring
+                            Its a devops illustration
                         </h3>
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.6, marginBottom: 16 }}>
                             ExamProctor provides examiners and administrators a secure environment to design tests, proctor candidates via webcam snapshots, monitor tab activity violations, and grade subjective responses.

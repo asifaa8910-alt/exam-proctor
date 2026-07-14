@@ -714,9 +714,11 @@ tbody tr:hover {
     flex-direction: column;
     max-width: 440px;
   }
+
   .auth-side-panel {
     display: none !important;
   }
+
   .mobile-logo {
     display: block !important;
   }
@@ -935,6 +937,7 @@ tbody tr:hover {
   0% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }
@@ -942,7 +945,10 @@ tbody tr:hover {
 
 /* Global prefers-reduced-motion accessibility styling */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

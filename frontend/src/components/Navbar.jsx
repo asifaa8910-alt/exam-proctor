@@ -1,8 +1,10 @@
 import { useAuth } from '../context/AuthContext';
-import { Bell, Shield, Menu } from 'lucide-react';
+import { Bell, Shield, Menu, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Navbar({ onMenuClick }) {
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <nav className="top-navbar">
@@ -14,6 +16,9 @@ export default function Navbar({ onMenuClick }) {
         <span>Exam Proctor System</span>
       </div>
       <div className="navbar-right">
+        <button className="navbar-theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
         <div className="navbar-notif">
           <Bell size={18} />
         </div>
@@ -83,21 +88,26 @@ export default function Navbar({ onMenuClick }) {
           align-items: center;
           gap: 16px;
         }
+        .navbar-theme-toggle,
         .navbar-notif {
           width: 36px;
           height: 36px;
           border-radius: var(--radius-md);
           border: 1px solid var(--border);
+          background: transparent;
           display: flex;
           align-items: center;
           justify-content: center;
           color: var(--text-secondary);
           cursor: pointer;
           transition: all var(--transition-fast);
+          outline: none;
         }
+        .navbar-theme-toggle:hover,
         .navbar-notif:hover {
           border-color: var(--accent);
           color: var(--accent);
+          background: var(--bg-primary);
         }
         .navbar-user {
           display: flex;
